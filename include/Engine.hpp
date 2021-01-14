@@ -56,7 +56,12 @@ private:
     vk::Pipeline _graphicsTriangleMeshPipeline;
 
 private:
-    Mesh _monkeyMesh;
+    // Mesh _monkeyMesh;
+
+// this private just to make sure that GraphicsPipeline class has no error
+private:
+    std::unique_ptr<MeshLoaderGraphicsPipeline> _monkeyMesh;
+    vk::Pipeline _monkeyGraphicsPipeline;
 
 public:
     static constexpr unsigned int ScreenWidth       = 800U;
@@ -108,8 +113,5 @@ private:
     size_t               _currentFrame                 = 0;
     unsigned long        _timeOut                      = 1000000000;   // 1 second = 10^(9) nano second
     uint32_t             _imageIndex                   = 0;
-
-private:
-
 
 };
