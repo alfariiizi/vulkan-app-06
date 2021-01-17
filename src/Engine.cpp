@@ -1,14 +1,15 @@
 #include "Engine.hpp"
 
-#include <iostream>
-#include <assert.h>
-#include <fstream>
-
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 #include "vk_mem_alloc.hpp"
 
 #include "Vulkan_Init.hpp"
+#include "GraphicsPipeline.hpp"
+
+#include <iostream>
+#include <assert.h>
+#include <fstream>
 
 #ifndef ENGINE_CATCH
 #define ENGINE_CATCH                            \
@@ -51,9 +52,7 @@ void Engine::initVulkan()
     createRenderPass();
     createFramebuffers();
     createMemoryAllocator();
-    createPipelineLayout();
     createGraphicsPipeline();
-    createTriangleMeshPipeline();
     createCommandComponent();
     createSyncObject();
 }
@@ -77,8 +76,6 @@ void Engine::cleanUp()
     _graphicsQueue.waitIdle();
     _presentQueue.waitIdle();
     _device->waitIdle();
-    
-    _monkeyMesh->getDeletionQueue().flush();
 
     _mainDeletionQueue.flush();
 
@@ -252,330 +249,155 @@ void Engine::createFramebuffers()
     );
 }
 
-void Engine::createPipelineLayout() 
-{
-    /**
-     * @brief Pipeline Layout
-     */
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo {};
-    pipelineLayoutInfo.setSetLayouts        ( nullptr );    // vk::DescriptorSetLayout
-    pipelineLayoutInfo.setPushConstantRanges( nullptr );    // vk::PushConstantRange
-
-    try
-    {
-        _pipelineLayout = _device->createPipelineLayout( pipelineLayoutInfo );
-    } ENGINE_CATCH
-
-    _mainDeletionQueue.pushFunction( 
-        [device = _device.get(), pl = _pipelineLayout](){
-            device.destroyPipelineLayout( pl );
-        }
-     );
-}
-
-void Engine::createGraphicsPipeline() 
-{
-    auto vertShaderCode = utils::gp::readFile( "shaders/vert.spv" );
-    auto fragShaderCode = utils::gp::readFile( "shaders/frag.spv" );
-
-    auto vertShaderModule = utils::gp::createShaderModule( _device.get(), vertShaderCode );
-    auto fragShaderModule = utils::gp::createShaderModule( _device.get(), fragShaderCode );
-
-    vk::PipelineShaderStageCreateInfo vertexShader {};
-    vertexShader.setStage( vk::ShaderStageFlagBits::eVertex );
-    vertexShader.setModule( vertShaderModule.get() );
-    vertexShader.setPName( "main" );
-
-    vk::PipelineShaderStageCreateInfo fragShader {};
-    fragShader.setStage( vk::ShaderStageFlagBits::eFragment );
-    fragShader.setModule( fragShaderModule.get() );
-    fragShader.setPName( "main" );
-
-
-    std::vector<vk::PipelineShaderStageCreateInfo> stages = { vertexShader, fragShader };
-
-
-    /**
-     * @brief Vertex Input State
-     */
-    vk::PipelineVertexInputStateCreateInfo vertexInputStateInfo {};
-    vertexInputStateInfo.setVertexBindingDescriptions       ( nullptr );
-    vertexInputStateInfo.setVertexAttributeDescriptions     ( nullptr );
-
-
-    /**
-     * @brief Input Assembly State
-     */
-    vk::PipelineInputAssemblyStateCreateInfo inputAssemblyStateInfo {};
-    inputAssemblyStateInfo.setTopology                 ( vk::PrimitiveTopology::eTriangleList );
-    inputAssemblyStateInfo.setPrimitiveRestartEnable   ( VK_FALSE );
-
-
-    /**
-     * @brief Viewport State
-     */
-    vk::Viewport viewport {};
-    viewport.setX       ( 0.0f );
-    viewport.setY       ( 0.0f );
-    viewport.setWidth   ( static_cast<float>( _swapchainExtent.width ) );
-    viewport.setHeight  ( static_cast<float>( _swapchainExtent.height ) );
-    viewport.setMinDepth( 0.0f );
-    viewport.setMaxDepth( 1.0f );
-
-    vk::Rect2D scissor {};
-    scissor.setOffset( vk::Offset2D{ 0, 0 } );
-    scissor.setExtent( _swapchainExtent );
-
-    vk::PipelineViewportStateCreateInfo viewportStateInfo{};
-    viewportStateInfo.setViewports  ( viewport );
-    viewportStateInfo.setScissors   ( scissor );
-
-
-    /**
-     * @brief Rasterization State
-     */
-    vk::PipelineRasterizationStateCreateInfo rasterizationStateInfo {};
-    rasterizationStateInfo.setDepthClampEnable          ( VK_FALSE );
-    rasterizationStateInfo.setRasterizerDiscardEnable   ( VK_FALSE );
-    rasterizationStateInfo.setPolygonMode               ( vk::PolygonMode::eFill );
-    rasterizationStateInfo.setCullMode                  ( vk::CullModeFlagBits::eBack );
-    rasterizationStateInfo.setFrontFace                 ( vk::FrontFace::eClockwise );
-    // depth bias. If this false, then 4 arguments ahead are ignored
-    rasterizationStateInfo.setDepthBiasEnable           ( VK_FALSE );
-    rasterizationStateInfo.setLineWidth                 ( 1.0f );
-
-
-    /**
-     * @brief Multisampling State
-     */
-    vk::PipelineMultisampleStateCreateInfo multisampleStateInfo {};
-    multisampleStateInfo.setRasterizationSamples( vk::SampleCountFlagBits::e1 );
-    multisampleStateInfo.setSampleShadingEnable ( VK_FALSE );
-
-
-    /**
-     * @brief Color Blend State
-     */
-    vk::PipelineColorBlendAttachmentState colorBlendAttachmentState {};
-    colorBlendAttachmentState.setBlendEnable( VK_FALSE );
-    colorBlendAttachmentState.setColorWriteMask( 
-        vk::ColorComponentFlagBits::eR 
-        | vk::ColorComponentFlagBits::eG
-        | vk::ColorComponentFlagBits::eB
-        | vk::ColorComponentFlagBits::eA 
-    );
-
-    vk::PipelineColorBlendStateCreateInfo colorBlendStateInfo {};
-    colorBlendStateInfo.setLogicOpEnable    ( VK_FALSE );
-    colorBlendStateInfo.setLogicOp          ( vk::LogicOp::eCopy );
-    colorBlendStateInfo.setAttachments      ( colorBlendAttachmentState );
-    colorBlendStateInfo.setBlendConstants   ( { 0.0f, 0.0f, 0.0f, 0.0f } );
-
-
-    vk::GraphicsPipelineCreateInfo gpi {};  // graphics pipeline info
-    gpi.setStages                  ( stages                     );
-    gpi.setPVertexInputState       ( &vertexInputStateInfo      );
-    gpi.setPInputAssemblyState     ( &inputAssemblyStateInfo    );
-    gpi.setPTessellationState      ( nullptr                    );
-    gpi.setPViewportState          ( &viewportStateInfo         );
-    gpi.setPRasterizationState     ( &rasterizationStateInfo    );
-    gpi.setPMultisampleState       ( &multisampleStateInfo      );
-    gpi.setPDepthStencilState      ( nullptr                    );
-    gpi.setPColorBlendState        ( &colorBlendStateInfo       );
-    gpi.setPDynamicState           ( nullptr                    );
-    gpi.setLayout                  ( _pipelineLayout            );
-    gpi.setRenderPass              ( _renderPass                );
-    gpi.setSubpass                 ( 0                          );
-    gpi.setBasePipelineHandle      ( nullptr                    );
-    gpi.setBasePipelineIndex       ( 0                          );
-
-    try
-    {
-        _graphicsPipeline = _device->createGraphicsPipeline( nullptr, gpi ).value;
-    } ENGINE_CATCH
-
-    _mainDeletionQueue.pushFunction(
-        [d = _device.get(), gp = _graphicsPipeline](){
-            d.destroyPipeline( gp );
-        }
-    );
-
-}
-
-void Engine::createTriangleMeshPipeline() 
-{
-    // auto vertShaderCode = utils::gp::readFile( "shaders/tri_mesh_vertex.spv" );
-    // auto fragShaderCode = utils::gp::readFile( "shaders/frag.spv" );
-
-    // auto vertShaderModule = utils::gp::createShaderModule( _device.get(), vertShaderCode );
-    // auto fragShaderModule = utils::gp::createShaderModule( _device.get(), fragShaderCode );
-
-    // vk::PipelineShaderStageCreateInfo vertexShader {};
-    // vertexShader.setStage( vk::ShaderStageFlagBits::eVertex );
-    // vertexShader.setModule( vertShaderModule.get() );
-    // vertexShader.setPName( "main" );
-
-    // vk::PipelineShaderStageCreateInfo fragShader {};
-    // fragShader.setStage( vk::ShaderStageFlagBits::eFragment );
-    // fragShader.setModule( fragShaderModule.get() );
-    // fragShader.setPName( "main" );
-
-
-    // std::vector<vk::PipelineShaderStageCreateInfo> stages = { vertexShader, fragShader };
-
-
-    // /**
-    //  * @brief Vertex Input State
-    //  */
-    // auto vertexInputDesc = Vertex::getVertexInputDescription();
-    // vk::PipelineVertexInputStateCreateInfo vertexInputStateInfo {};
-    // vertexInputStateInfo.setVertexBindingDescriptions       ( vertexInputDesc.bindings );
-    // vertexInputStateInfo.setVertexAttributeDescriptions     ( vertexInputDesc.attributs );
-
-
-    // /**
-    //  * @brief Input Assembly State
-    //  */
-    // vk::PipelineInputAssemblyStateCreateInfo inputAssemblyStateInfo {};
-    // inputAssemblyStateInfo.setTopology                 ( vk::PrimitiveTopology::eTriangleList );
-    // inputAssemblyStateInfo.setPrimitiveRestartEnable   ( VK_FALSE );
-
-
-    // /**
-    //  * @brief Viewport State
-    //  */
-    // vk::Viewport viewport {};
-    // viewport.setX       ( 0.0f );
-    // viewport.setY       ( 0.0f );
-    // viewport.setWidth   ( static_cast<float>( _swapchainExtent.width ) );
-    // viewport.setHeight  ( static_cast<float>( _swapchainExtent.height ) );
-    // viewport.setMinDepth( 0.0f );
-    // viewport.setMaxDepth( 1.0f );
-
-    // vk::Rect2D scissor {};
-    // scissor.setOffset( vk::Offset2D{ 0, 0 } );
-    // scissor.setExtent( _swapchainExtent );
-
-    // vk::PipelineViewportStateCreateInfo viewportStateInfo{};
-    // viewportStateInfo.setViewports  ( viewport );
-    // viewportStateInfo.setScissors   ( scissor );
-
-
-    // /**
-    //  * @brief Rasterization State
-    //  */
-    // vk::PipelineRasterizationStateCreateInfo rasterizationStateInfo {};
-    // rasterizationStateInfo.setDepthClampEnable          ( VK_FALSE );
-    // rasterizationStateInfo.setRasterizerDiscardEnable   ( VK_FALSE );
-    // rasterizationStateInfo.setPolygonMode               ( vk::PolygonMode::eFill );
-    // rasterizationStateInfo.setCullMode                  ( vk::CullModeFlagBits::eNone );
-    // rasterizationStateInfo.setFrontFace                 ( vk::FrontFace::eClockwise );
-    // // depth bias. If this false, then 4 arguments ahead are ignored
-    // rasterizationStateInfo.setDepthBiasEnable           ( VK_FALSE );
-    // rasterizationStateInfo.setLineWidth                 ( 1.0f );
-
-
-    // /**
-    //  * @brief Multisampling State
-    //  */
-    // vk::PipelineMultisampleStateCreateInfo multisampleStateInfo {};
-    // multisampleStateInfo.setRasterizationSamples( vk::SampleCountFlagBits::e1 );
-    // multisampleStateInfo.setSampleShadingEnable ( VK_FALSE );
-
-
-    // /**
-    //  * @brief Color Blend State
-    //  */
-    // vk::PipelineColorBlendAttachmentState colorBlendAttachmentState {};
-    // colorBlendAttachmentState.setBlendEnable( VK_FALSE );
-    // colorBlendAttachmentState.setColorWriteMask( 
-    //     vk::ColorComponentFlagBits::eR 
-    //     | vk::ColorComponentFlagBits::eG
-    //     | vk::ColorComponentFlagBits::eB
-    //     | vk::ColorComponentFlagBits::eA 
-    // );
-
-    // vk::PipelineColorBlendStateCreateInfo colorBlendStateInfo {};
-    // colorBlendStateInfo.setLogicOpEnable    ( VK_FALSE );
-    // colorBlendStateInfo.setLogicOp          ( vk::LogicOp::eCopy );
-    // colorBlendStateInfo.setAttachments      ( colorBlendAttachmentState );
-    // colorBlendStateInfo.setBlendConstants   ( { 0.0f, 0.0f, 0.0f, 0.0f } );
-
-
-    // vk::PushConstantRange pushConstant {};
-    // pushConstant.setSize( sizeof(MeshPushConstant) );
-    // pushConstant.setOffset( 0 );
-    // pushConstant.setStageFlags( vk::ShaderStageFlagBits::eVertex );
-
-    // vk::PipelineLayoutCreateInfo meshPipelineLayoutInfo {};
-    // meshPipelineLayoutInfo.setSetLayouts( nullptr );
-    // meshPipelineLayoutInfo.setPushConstantRanges( pushConstant );
-
-    // try
-    // {
-    //     _meshPipelineLayout = _device->createPipelineLayout( meshPipelineLayoutInfo );
-    // } ENGINE_CATCH
-    // _mainDeletionQueue.pushFunction(
-    //     [d = _device.get(), pl = _meshPipelineLayout](){
-    //         d.destroyPipelineLayout( pl );
-    //     }
-    // );
-
-    // vk::GraphicsPipelineCreateInfo gpi {};  // graphics pipeline info
-    // gpi.setStages                  ( stages                     );
-    // gpi.setPVertexInputState       ( &vertexInputStateInfo      );
-    // gpi.setPInputAssemblyState     ( &inputAssemblyStateInfo    );
-    // gpi.setPTessellationState      ( nullptr                    );
-    // gpi.setPViewportState          ( &viewportStateInfo         );
-    // gpi.setPRasterizationState     ( &rasterizationStateInfo    );
-    // gpi.setPMultisampleState       ( &multisampleStateInfo      );
-    // gpi.setPDepthStencilState      ( nullptr                    );
-    // gpi.setPColorBlendState        ( &colorBlendStateInfo       );
-    // gpi.setPDynamicState           ( nullptr                    );
-    // gpi.setLayout                  ( _meshPipelineLayout        );
-    // gpi.setRenderPass              ( _renderPass                );
-    // gpi.setSubpass                 ( 0                          );
-    // gpi.setBasePipelineHandle      ( nullptr                    );
-    // gpi.setBasePipelineIndex       ( 0                          );
-
-    // try
-    // {
-    //     _graphicsTriangleMeshPipeline = _device->createGraphicsPipeline( nullptr, gpi ).value;
-    // } ENGINE_CATCH
-
-    // _mainDeletionQueue.pushFunction(
-    //     [d = _device.get(), gp = _graphicsTriangleMeshPipeline](){
-    //         d.destroyPipeline( gp );
-    //     }
-    // );
-
-    // loadTriangleMesh();
-    // uploadMesh( _triangleMesh );
-    _monkeyMesh = std::unique_ptr<MeshLoaderGraphicsPipeline>( new MeshLoaderGraphicsPipeline() );
-    _monkeyMesh->init( _device.get(), _renderPass, "shaders/tri_mesh_vertex.spv", "shaders/frag.spv", _swapchainExtent );
-    _monkeyGraphicsPipeline = _monkeyMesh->getGraphicsPipeline();
-    _monkeyMesh->load( "resources/monkey_smooth.obj" );
-}
-
 void Engine::createSyncObject() 
 {
-    // _imageAvaliableSemaphores.reserve( FRAME_IN_FLIGH );
-    // _renderFinishedSemaphores.reserve( FRAME_IN_FLIGH );
-    // _inFlighFences.reserve( FRAME_IN_FLIGH );
-
-    // for( size_t i = 0; i < FRAME_IN_FLIGH; ++i )
-    // {
     try
     {
-        // _imageAvaliableSemaphores.emplace_back( _device->createSemaphoreUnique( {} ) );
-        // _renderFinishedSemaphores.emplace_back( _device->createSemaphoreUnique( {} ) );
-        // _inFlighFences.emplace_back( _device->createFenceUnique( vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled } ) );
         _renderSemaphore = _device->createSemaphoreUnique( {} );
         _presentSemaphore = _device->createSemaphoreUnique( {} );
         _renderFence = _device->createFenceUnique( vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled } );
     } ENGINE_CATCH
-    // }
+
 }
+
+
+// void Engine::createGraphicsPipeline() 
+// {
+//     auto vertShaderCode = utils::gp::readFile( "shaders/vert.spv" );
+//     auto fragShaderCode = utils::gp::readFile( "shaders/frag.spv" );
+
+//     auto vertShaderModule = utils::gp::createShaderModule( _device.get(), vertShaderCode );
+//     auto fragShaderModule = utils::gp::createShaderModule( _device.get(), fragShaderCode );
+
+//     vk::PipelineShaderStageCreateInfo vertexShader {};
+//     vertexShader.setStage( vk::ShaderStageFlagBits::eVertex );
+//     vertexShader.setModule( vertShaderModule.get() );
+//     vertexShader.setPName( "main" );
+
+//     vk::PipelineShaderStageCreateInfo fragShader {};
+//     fragShader.setStage( vk::ShaderStageFlagBits::eFragment );
+//     fragShader.setModule( fragShaderModule.get() );
+//     fragShader.setPName( "main" );
+
+
+//     std::vector<vk::PipelineShaderStageCreateInfo> stages = { vertexShader, fragShader };
+
+
+//     /**
+//      * @brief Vertex Input State
+//      */
+//     vk::PipelineVertexInputStateCreateInfo vertexInputStateInfo {};
+//     vertexInputStateInfo.setVertexBindingDescriptions       ( nullptr );
+//     vertexInputStateInfo.setVertexAttributeDescriptions     ( nullptr );
+
+
+//     /**
+//      * @brief Input Assembly State
+//      */
+//     vk::PipelineInputAssemblyStateCreateInfo inputAssemblyStateInfo {};
+//     inputAssemblyStateInfo.setTopology                 ( vk::PrimitiveTopology::eTriangleList );
+//     inputAssemblyStateInfo.setPrimitiveRestartEnable   ( VK_FALSE );
+
+
+//     /**
+//      * @brief Viewport State
+//      */
+//     vk::Viewport viewport {};
+//     viewport.setX       ( 0.0f );
+//     viewport.setY       ( 0.0f );
+//     viewport.setWidth   ( static_cast<float>( _swapchainExtent.width ) );
+//     viewport.setHeight  ( static_cast<float>( _swapchainExtent.height ) );
+//     viewport.setMinDepth( 0.0f );
+//     viewport.setMaxDepth( 1.0f );
+
+//     vk::Rect2D scissor {};
+//     scissor.setOffset( vk::Offset2D{ 0, 0 } );
+//     scissor.setExtent( _swapchainExtent );
+
+//     vk::PipelineViewportStateCreateInfo viewportStateInfo{};
+//     viewportStateInfo.setViewports  ( viewport );
+//     viewportStateInfo.setScissors   ( scissor );
+
+
+//     /**
+//      * @brief Rasterization State
+//      */
+//     vk::PipelineRasterizationStateCreateInfo rasterizationStateInfo {};
+//     rasterizationStateInfo.setDepthClampEnable          ( VK_FALSE );
+//     rasterizationStateInfo.setRasterizerDiscardEnable   ( VK_FALSE );
+//     rasterizationStateInfo.setPolygonMode               ( vk::PolygonMode::eFill );
+//     rasterizationStateInfo.setCullMode                  ( vk::CullModeFlagBits::eBack );
+//     rasterizationStateInfo.setFrontFace                 ( vk::FrontFace::eClockwise );
+//     // depth bias. If this false, then 4 arguments ahead are ignored
+//     rasterizationStateInfo.setDepthBiasEnable           ( VK_FALSE );
+//     rasterizationStateInfo.setLineWidth                 ( 1.0f );
+
+
+//     /**
+//      * @brief Multisampling State
+//      */
+//     vk::PipelineMultisampleStateCreateInfo multisampleStateInfo {};
+//     multisampleStateInfo.setRasterizationSamples( vk::SampleCountFlagBits::e1 );
+//     multisampleStateInfo.setSampleShadingEnable ( VK_FALSE );
+
+
+//     /**
+//      * @brief Color Blend State
+//      */
+//     vk::PipelineColorBlendAttachmentState colorBlendAttachmentState {};
+//     colorBlendAttachmentState.setBlendEnable( VK_FALSE );
+//     colorBlendAttachmentState.setColorWriteMask( 
+//         vk::ColorComponentFlagBits::eR 
+//         | vk::ColorComponentFlagBits::eG
+//         | vk::ColorComponentFlagBits::eB
+//         | vk::ColorComponentFlagBits::eA 
+//     );
+
+//     vk::PipelineColorBlendStateCreateInfo colorBlendStateInfo {};
+//     colorBlendStateInfo.setLogicOpEnable    ( VK_FALSE );
+//     colorBlendStateInfo.setLogicOp          ( vk::LogicOp::eCopy );
+//     colorBlendStateInfo.setAttachments      ( colorBlendAttachmentState );
+//     colorBlendStateInfo.setBlendConstants   ( { 0.0f, 0.0f, 0.0f, 0.0f } );
+
+
+//     vk::GraphicsPipelineCreateInfo gpi {};  // graphics pipeline info
+//     gpi.setStages                  ( stages                     );
+//     gpi.setPVertexInputState       ( &vertexInputStateInfo      );
+//     gpi.setPInputAssemblyState     ( &inputAssemblyStateInfo    );
+//     gpi.setPTessellationState      ( nullptr                    );
+//     gpi.setPViewportState          ( &viewportStateInfo         );
+//     gpi.setPRasterizationState     ( &rasterizationStateInfo    );
+//     gpi.setPMultisampleState       ( &multisampleStateInfo      );
+//     gpi.setPDepthStencilState      ( nullptr                    );
+//     gpi.setPColorBlendState        ( &colorBlendStateInfo       );
+//     gpi.setPDynamicState           ( nullptr                    );
+//     gpi.setLayout                  ( _pipelineLayout            );
+//     gpi.setRenderPass              ( _renderPass                );
+//     gpi.setSubpass                 ( 0                          );
+//     gpi.setBasePipelineHandle      ( nullptr                    );
+//     gpi.setBasePipelineIndex       ( 0                          );
+
+//     try
+//     {
+//         _graphicsPipeline = _device->createGraphicsPipeline( nullptr, gpi ).value;
+//     } ENGINE_CATCH
+
+//     _mainDeletionQueue.pushFunction(
+//         [d = _device.get(), gp = _graphicsPipeline](){
+//             d.destroyPipeline( gp );
+//         }
+//     );
+
+// }
+
+// void Engine::createSyncObject() 
+// {
+//     try
+//     {
+//         _presentSemaphore = _device->createSemaphoreUnique( {} );
+//         _renderFence = _device->createFenceUnique( vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled } );
+//     } ENGINE_CATCH
+// }
 
 void Engine::createMemoryAllocator() 
 {
@@ -615,12 +437,13 @@ void Engine::draw()
     //     vk::PipelineBindPoint::eGraphics,       // pipeline bind point (in the future, it could be compute pipeline)
     //     _graphicsPipeline                       // the pipeline
     // );
-    _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _graphicsTriangleMeshPipeline );
+    // _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _graphicsTriangleMeshPipeline );
+    _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _monkeyGraphicsPipeline );
 
     vk::DeviceSize offset = 0;
     // _mainCommandBuffer->bindVertexBuffers( 0, _triangleMesh.vertexBuffer.buffer, offset );
-    // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh.vertexBuffer.buffer, offset );
-    _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh->getMesh().vertexBuffer.buffer, offset );
+    _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh.vertexBuffer.buffer, offset );
+    // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh->getMesh().vertexBuffer.buffer, offset );
 
 
     glm::vec3 camPos = { 0.0f, 0.0f, -2.0f };
@@ -637,7 +460,8 @@ void Engine::draw()
     MeshPushConstant meshPushConstant;
     meshPushConstant.renderMatrix = matrixMesh;
 
-    _mainCommandBuffer->pushConstants<MeshPushConstant>( _meshPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
+    // _mainCommandBuffer->pushConstants<MeshPushConstant>( _meshPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
+    _mainCommandBuffer->pushConstants<MeshPushConstant>( _monkeyPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
 
     /**
      * @brief Drawing
@@ -656,8 +480,8 @@ void Engine::draw()
     //     0
     // );
     
-    // _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
-    _mainCommandBuffer->draw( _monkeyMesh->getMesh().vertices.size(), 1, 0, 0 );
+    _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
+    // _mainCommandBuffer->draw( _monkeyMesh->getMesh().vertices.size(), 1, 0, 0 );
 }
 
 void Engine::record() 
@@ -795,4 +619,80 @@ void Engine::uploadMesh(Mesh& mesh)
     void* data = _allocator.mapMemory( mesh.vertexBuffer.allocation );
     memcpy( data, mesh.vertices.data(), size );
     _allocator.unmapMemory( mesh.vertexBuffer.allocation );
+}
+
+void Engine::createGraphicsPipeline() 
+{
+    // createTriangleMeshPipeline();
+    createMonkeyMeshPipeline();
+}
+
+void Engine::createTriangleMeshPipeline() 
+{
+    // GraphicsPipeline builder;
+    // builder.init( _device.get(), "shaders/vert.spv", "shaders/frag.spv", _swapchainExtent, _mainDeletionQueue );
+
+    // /**
+    //  * @brief Vertex Input state
+    //  */
+    // builder.m_vertexInputDesc = Vertex::getVertexInputDescription();
+    // builder.m_vertexInputStateInfo.setVertexBindingDescriptions( builder.m_vertexInputDesc.bindings );
+    // builder.m_vertexInputStateInfo.setVertexAttributeDescriptions( builder.m_vertexInputDesc.attributs );
+
+    // builder.createGraphicsPipeline( _renderPass, _mainDeletionQueue );
+    // _graphicsTriangleMeshPipeline = builder.m_graphicsPipeline;
+
+    // /**
+    //  * @brief Vertex Position
+    //  */
+    // _triangleMesh.vertices[0].position = { 0.0, -0.5f, 0.0f };
+    // _triangleMesh.vertices[1].position = { 0.5, 0.5f, 0.0f };
+    // _triangleMesh.vertices[2].position = { -0.5, 0.5f, 0.0f };
+
+    // /**
+    //  * @brief Vertex Color
+    //  */
+    // _triangleMesh.vertices[0].color = { 1.0f, 0.0f, 0.0f };
+    // _triangleMesh.vertices[1].color = { 0.0f, 1.0f, 0.0f };
+    // _triangleMesh.vertices[2].color = { 0.0f, 0.0f, 1.0f };
+}
+
+void Engine::createMonkeyMeshPipeline() 
+{
+    _monkeyMesh.loadFromObj("resources/monkey_smooth.obj");
+    uploadMesh( _monkeyMesh );
+    
+    /**
+     * @brief Pipeline layout info
+     */
+    vk::PushConstantRange pushConstant {};
+    pushConstant.setOffset( 0 );
+    pushConstant.setSize( sizeof( MeshPushConstant ) );
+    pushConstant.setStageFlags( vk::ShaderStageFlagBits::eVertex );
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo {};
+    pipelineLayoutInfo.setPushConstantRanges( pushConstant );
+    try
+    {
+        _monkeyPipelineLayout = _device->createPipelineLayout( pipelineLayoutInfo );
+    } ENGINE_CATCH
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), pl = _monkeyPipelineLayout](){
+            d.destroyPipelineLayout( pl );
+        }
+    );
+
+
+    GraphicsPipeline builder;
+    builder.init( _device.get(), "shaders/tri_mesh_vertex.spv", "shaders/frag.spv", _swapchainExtent, _mainDeletionQueue );
+
+    /**
+     * @brief Vertex Input state info
+     */
+    builder.m_vertexInputDesc = Vertex::getVertexInputDescription();
+    builder.m_vertexInputStateInfo.setVertexBindingDescriptions( builder.m_vertexInputDesc.bindings );
+    builder.m_vertexInputStateInfo.setVertexAttributeDescriptions( builder.m_vertexInputDesc.attributs );
+
+    builder.createGraphicsPipeline( _renderPass, _monkeyPipelineLayout, _mainDeletionQueue );
+    _monkeyGraphicsPipeline = builder.m_graphicsPipeline;
 }

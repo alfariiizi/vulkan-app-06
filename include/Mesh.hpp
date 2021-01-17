@@ -1,6 +1,5 @@
 #pragma once
 
-#include "GraphicsPipeline.hpp"
 #include "utils.hpp"
 
 #include <iostream>
@@ -66,36 +65,4 @@ struct Mesh
     AllocatedBuffer vertexBuffer;
 
     bool loadFromObj( const std::string& filename );
-};
-
-class MeshLoaderGraphicsPipeline : public GraphicsPipeline
-{
-public:
-    Mesh getMesh() const;
-    virtual void load( const std::string& objFilename );
-    void setAllocator( const vma::Allocator& allocator );
-
-public:
-    void setMesh( Mesh mesh );
-    virtual void createPipelineLayout() override
-    {
-        m_pushConstant.setSize( sizeof(MeshPushConstant) );
-        m_pushConstant.setOffset( 0 );
-        m_pushConstant.setStageFlags( vk::ShaderStageFlagBits::eVertex );
-
-        m_pipelineLayoutInfo.setSetLayouts( nullptr );
-        m_pipelineLayoutInfo.setPushConstantRanges( m_pushConstant );
-
-        try
-        {
-            m_pipelineLayout = device.createPipelineLayout( m_pipelineLayoutInfo );
-        } ENGINE_CATCH
-
-        m_graphicsPipelineInfo.setLayout( m_pipelineLayout );
-    }
-    virtual void upload();
-
-private:
-    Mesh m_mesh;
-    vma::Allocator m_allocator;
 };

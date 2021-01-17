@@ -12,11 +12,11 @@
     }
 #endif
 
-void GraphicsPipeline::init(  const vk::Device& device,
-            const vk::RenderPass& renderpass,
+void GraphicsPipeline::init( vk::Device device,
             const std::string& vertFile, 
             const std::string& fragFile,
-            const vk::Extent2D& windowExtent
+            const vk::Extent2D& windowExtent,
+            DeletionQueue& deletor
 )
 {
     this->device = device;
@@ -24,68 +24,29 @@ void GraphicsPipeline::init(  const vk::Device& device,
     createVertexInputState();
     createInputAssemblyState();
     createViewportState( windowExtent );
+    createRasterizationState();
     createMultisampleState();
     createColorBlendState();
-    createPipelineLayout();
 
     hasInit = true;
-    createGraphicsPipeline( renderpass );
 }
-//     // m_inputAssemblyStateInfo( vk::PipelineInputAssemblyStateCreateInfo{} ),
-//     // m_viewportStateInfo( vk::PipelineViewportStateCreateInfo{} ),
-//     // m_rasterizationStateInfo( vk::PipelineRasterizationStateCreateInfo{} ),
-//     // m_multisampleStateInfo( vk::PipelineMultisampleStateCreateInfo{} ),
-//     // m_colorBlendStateInfo( vk::PipelineColorBlendStateCreateInfo{} )
-// {
-//     /**
-//      * @brief Vertex input
-//      */
-//     m_vertexInputStateInfo = vk::PipelineVertexInputStateCreateInfo{};
-
-//     /**
-//      * @brief Input Assembly
-//      */
-//     m_inputAssemblyStateInfo = vk::PipelineInputAssemblyStateCreateInfo{};
-
-//     /**
-//      * @brief Viewport
-//      */
-//     m_viewport = vk::Viewport{};
-//     m_scissor = vk::Rect2D{};
-//     m_viewportStateInfo = vk::PipelineViewportStateCreateInfo{};
-
-//     /**
-//      * @brief Multisampling
-//      */
-//     m_multisampleStateInfo = vk::PipelineMultisampleStateCreateInfo{};
-
-//     /**
-//      * @brief Color blend
-//      */
-//     m_colorBlendAttachment = vk::PipelineColorBlendAttachmentState{};
-//     m_colorBlendStateInfo = vk::PipelineColorBlendStateCreateInfo{};
-
-//     /**
-//      * @brief 
-//      */
-// }
 
 void GraphicsPipeline::createShaderStage( const std::string& vertFile, const std::string& fragFile ) 
 {
     auto vertShaderCode = utils::gp::readFile( vertFile );
     auto fragShaderCode = utils::gp::readFile( fragFile );
 
-    auto vertShaderModule = utils::gp::createShaderModule( device, vertShaderCode );
-    auto fragShaderModule = utils::gp::createShaderModule( device, fragShaderCode );
+    m_vertShaderModule = utils::gp::createShaderModule( device, vertShaderCode );
+    m_fragShaderModule = utils::gp::createShaderModule( device, fragShaderCode );
 
     vk::PipelineShaderStageCreateInfo vertexShader {};
     vertexShader.setStage( vk::ShaderStageFlagBits::eVertex );
-    vertexShader.setModule( vertShaderModule.get() );
+    vertexShader.setModule( m_vertShaderModule.get() );
     vertexShader.setPName( "main" );
 
     vk::PipelineShaderStageCreateInfo fragShader {};
     fragShader.setStage( vk::ShaderStageFlagBits::eFragment );
-    fragShader.setModule( fragShaderModule.get() );
+    fragShader.setModule( m_fragShaderModule.get() );
     fragShader.setPName( "main" );
 
 
@@ -96,8 +57,7 @@ void GraphicsPipeline::createShaderStage( const std::string& vertFile, const std
 
 void GraphicsPipeline::createVertexInputState() 
 {
-    m_vertexInputAttributeDesc = vk::VertexInputAttributeDescription();
-    m_vertexInputBindingDesc = vk::VertexInputBindingDescription();
+    // for basic drawing triangle, we not gonna use the vertex input description
 
     m_vertexInputStateInfo.setVertexBindingDescriptions( nullptr );
     m_vertexInputStateInfo.setVertexAttributeDescriptions( nullptr );
@@ -171,27 +131,10 @@ void GraphicsPipeline::createColorBlendState()
     m_graphicsPipelineInfo.setPColorBlendState( &m_colorBlendStateInfo );
 }
 
-void GraphicsPipeline::createPipelineLayout() 
+void GraphicsPipeline::createGraphicsPipeline( const vk::RenderPass& renderpass, vk::PipelineLayout pipelineLayout, DeletionQueue& deletor ) 
 {
-    m_pipelineLayoutInfo.setSetLayouts( nullptr );
-    m_pipelineLayoutInfo.setPushConstantRanges( nullptr );
-
-    try
-    {
-        m_pipelineLayout = device.createPipelineLayout( m_pipelineLayoutInfo );
-    } ENGINE_CATCH
-    m_deletionQueue.pushFunction(
-        [d = device, pl = m_pipelineLayout](){
-            d.destroyPipelineLayout( pl );
-        }
-    );
-
-    m_graphicsPipelineInfo.setLayout( m_pipelineLayout );
-}
-
-void GraphicsPipeline::createGraphicsPipeline(const vk::RenderPass& renderpass) 
-{
-    m_graphicsPipelineInfo.setPMultisampleState( nullptr );
+    assert( hasInit );
+    m_graphicsPipelineInfo.setLayout( pipelineLayout );
     m_graphicsPipelineInfo.setPDepthStencilState( nullptr );
     m_graphicsPipelineInfo.setRenderPass              ( renderpass                 );
     m_graphicsPipelineInfo.setSubpass                 ( 0                          );
@@ -202,7 +145,7 @@ void GraphicsPipeline::createGraphicsPipeline(const vk::RenderPass& renderpass)
     if( success.result == vk::Result::eSuccess )
     {
         m_graphicsPipeline = success.value;
-        m_deletionQueue.pushFunction(
+        deletor.pushFunction(
             [d = device, gp = m_graphicsPipeline](){
                 d.destroyPipeline( gp );
             }
@@ -210,17 +153,8 @@ void GraphicsPipeline::createGraphicsPipeline(const vk::RenderPass& renderpass)
     }
 }
 
-vk::PipelineLayout GraphicsPipeline::getPipelineLayout() const
-{
-    return m_pipelineLayout;
-}
-
 vk::Pipeline GraphicsPipeline::getGraphicsPipeline() const
 {
+    assert( hasInit );
     return m_graphicsPipeline;
-}
-
-DeletionQueue GraphicsPipeline::getDeletionQueue() const
-{
-    return m_deletionQueue;
 }

@@ -32,9 +32,6 @@ private:
 private:
     void createRenderPass();
     void createFramebuffers();
-    void createPipelineLayout();
-    void createGraphicsPipeline();
-    void createTriangleMeshPipeline();
     void createSyncObject();
 
 private:
@@ -51,6 +48,12 @@ private:
     void uploadMesh( Mesh& mesh );
 
 private:
+    void createGraphicsPipeline();
+    void createTrianglePipeline();
+    void createTriangleMeshPipeline();
+    void createMonkeyMeshPipeline();
+
+private:
     Mesh _triangleMesh;
     vk::PipelineLayout _meshPipelineLayout;
     vk::Pipeline _graphicsTriangleMeshPipeline;
@@ -60,7 +63,8 @@ private:
 
 // this private just to make sure that GraphicsPipeline class has no error
 private:
-    std::unique_ptr<MeshLoaderGraphicsPipeline> _monkeyMesh;
+    Mesh _monkeyMesh;
+    vk::PipelineLayout _monkeyPipelineLayout;
     vk::Pipeline _monkeyGraphicsPipeline;
 
 public:
