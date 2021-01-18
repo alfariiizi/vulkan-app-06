@@ -25,6 +25,9 @@ private:
     void createColorBlendState();
 
 public:
+    static vk::PipelineDepthStencilStateCreateInfo createDepthStencilInfo( bool bDepthTest, bool bDepthWrite, vk::CompareOp compareOp );
+
+public:
     void createGraphicsPipeline( const vk::RenderPass& renderpass, vk::PipelineLayout pipelineLayout, DeletionQueue& deletor );
 
 public:
@@ -57,6 +60,10 @@ public:
 public:
     vk::PipelineColorBlendAttachmentState m_colorBlendAttachment {};
     vk::PipelineColorBlendStateCreateInfo m_colorBlendStateInfo {};
+
+public:
+    vk::PipelineDepthStencilStateCreateInfo m_depthStencilStateInfo {};
+    bool m_useDepthStencil = false;
 
 public:
     vk::GraphicsPipelineCreateInfo m_graphicsPipelineInfo {};

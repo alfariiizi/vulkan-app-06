@@ -265,3 +265,44 @@ std::vector<vk::UniqueCommandBuffer> init::cm::createCommandBuffers( const vk::D
         return device.allocateCommandBuffersUnique( cmdBufferAllocInfo );
     } ENGINE_CATCH
 }
+
+
+vk::ImageCreateInfo init::image::initImageInfo( vk::Format format, vk::ImageUsageFlags usageFlag, vk::Extent3D extent )
+{
+    vk::ImageCreateInfo imageInfo {};
+    imageInfo.setImageType( vk::ImageType::e2D );
+    imageInfo.setFormat( format );
+    imageInfo.setExtent( extent );
+
+    // we won't use mip map, so we set the mip map level to 1
+    imageInfo.setMipLevels( 1 );
+    // we just need one layer
+    imageInfo.setArrayLayers( 1 );
+
+    imageInfo.setSamples( vk::SampleCountFlagBits::e1 );    // we won't use fancy sample for now
+    imageInfo.setUsage( usageFlag );
+    imageInfo.setTiling( vk::ImageTiling::eOptimal ); // just let the GPU to control this image, so the GPU can be read and write optimally
+
+    return imageInfo;
+}
+
+vk::ImageViewCreateInfo init::image::initImageViewInfo( vk::Format format, vk::Image theImage, vk::ImageAspectFlags aspectMask )
+{
+    vk::ImageViewCreateInfo imageViewInfo {};
+    imageViewInfo.setFormat( format );
+    imageViewInfo.setImage( theImage );
+    imageViewInfo.setSubresourceRange(
+        vk::ImageSubresourceRange{ 
+            aspectMask, // aspect mask
+            0,          // mip map level that will use
+            1,          // mip map level count
+            0,          // array layer that will use
+            1           // array layer count
+         }
+    );
+
+    // for now, this image view type is really similar with image type, but it's possible to use different image view type
+    imageViewInfo.setViewType( vk::ImageViewType::e2D );
+
+    return imageViewInfo;
+}

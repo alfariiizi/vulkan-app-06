@@ -32,5 +32,10 @@ namespace gp // graphics pipeline
 // coming soon (maybe)
 } // namespace gp
 
+namespace image
+{
+vk::ImageCreateInfo initImageInfo( vk::Format format, vk::ImageUsageFlags usageFlag, vk::Extent3D extent );
+vk::ImageViewCreateInfo initImageViewInfo( vk::Format format, vk::Image theImage, vk::ImageAspectFlags aspectMask );
+}
 
 };

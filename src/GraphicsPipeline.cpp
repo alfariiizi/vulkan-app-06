@@ -131,11 +131,32 @@ void GraphicsPipeline::createColorBlendState()
     m_graphicsPipelineInfo.setPColorBlendState( &m_colorBlendStateInfo );
 }
 
+vk::PipelineDepthStencilStateCreateInfo GraphicsPipeline::createDepthStencilInfo(bool bDepthTest, bool bDepthWrite, vk::CompareOp compareOp) 
+{
+    vk::PipelineDepthStencilStateCreateInfo depthStencilInfo {};
+    depthStencilInfo.setDepthTestEnable( bDepthTest ? VK_TRUE : VK_FALSE );
+    depthStencilInfo.setDepthWriteEnable( bDepthWrite ? VK_TRUE : VK_FALSE );
+    depthStencilInfo.setDepthCompareOp( bDepthTest ? compareOp : vk::CompareOp::eAlways );
+    depthStencilInfo.setDepthBoundsTestEnable( VK_FALSE );
+    depthStencilInfo.setMinDepthBounds( 0.0f );  // optional
+    depthStencilInfo.setMaxDepthBounds( 1.0f );  // optional
+    depthStencilInfo.setStencilTestEnable( VK_FALSE );   // just use depth without stencil
+
+    return depthStencilInfo;
+}
+
 void GraphicsPipeline::createGraphicsPipeline( const vk::RenderPass& renderpass, vk::PipelineLayout pipelineLayout, DeletionQueue& deletor ) 
 {
     assert( hasInit );
     m_graphicsPipelineInfo.setLayout( pipelineLayout );
-    m_graphicsPipelineInfo.setPDepthStencilState( nullptr );
+
+    if( m_useDepthStencil )
+    {
+        m_graphicsPipelineInfo.setPDepthStencilState( &m_depthStencilStateInfo );
+    }
+    else
+        m_graphicsPipelineInfo.setPDepthStencilState( nullptr );
+
     m_graphicsPipelineInfo.setRenderPass              ( renderpass                 );
     m_graphicsPipelineInfo.setSubpass                 ( 0                          );
     m_graphicsPipelineInfo.setBasePipelineHandle      ( nullptr                    );

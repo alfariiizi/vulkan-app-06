@@ -54,9 +54,9 @@ private:
     void createMonkeyMeshPipeline();
 
 private:
-    Mesh _triangleMesh;
-    vk::PipelineLayout _meshPipelineLayout;
-    vk::Pipeline _graphicsTriangleMeshPipeline;
+    // Mesh _triangleMesh;
+    // vk::PipelineLayout _meshPipelineLayout;
+    // vk::Pipeline _graphicsTriangleMeshPipeline;
 
 private:
     // Mesh _monkeyMesh;
@@ -99,10 +99,13 @@ private:
 private:
     vk::RenderPass                  _renderPass;
     std::vector<vk::Framebuffer>    _swapchainFramebuffers;
+    AllocatedImage                  _depthImage;
+    vk::ImageView                   _depthImageView;
+    vk::Format                      _depthFormat;
 
 private:
-    vk::PipelineLayout      _pipelineLayout;
-    vk::Pipeline            _graphicsPipeline;
+    // vk::PipelineLayout      _pipelineLayout;
+    // vk::Pipeline            _graphicsPipeline;
     uint32_t                _frameNumber = 0;
 
 private:

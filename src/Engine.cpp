@@ -48,10 +48,10 @@ void Engine::initWindow()
 void Engine::initVulkan() 
 {
     createMainVulkanComponent();
+    createMemoryAllocator();
     createSwapchainComponent();
     createRenderPass();
     createFramebuffers();
-    createMemoryAllocator();
     createGraphicsPipeline();
     createCommandComponent();
     createSyncObject();
@@ -141,6 +141,51 @@ void Engine::createSwapchainComponent()
                 d.destroyImageView( imageView );
         }
      );
+
+    /***************************************************/
+
+    /**
+      * @brief This image actually not part of swapchain image. It's image is for depth image
+     */
+
+    /**
+     * @brief Init the image info
+     */
+    vk::Extent3D depthImageExtent { ScreenWidth, ScreenHeight, 1 };
+    _depthFormat = vk::Format::eD32Sfloat; // most GPU support this format
+    auto depthImageInfo = init::image::initImageInfo( _depthFormat, vk::ImageUsageFlagBits::eDepthStencilAttachment, depthImageExtent );
+
+    /**
+     * @brief Init the vma
+     */
+    vma::AllocationCreateInfo depthImageAllocInfo {};
+    depthImageAllocInfo.setUsage( vma::MemoryUsage::eGpuOnly ); // this because we use optimal tilling when use the image
+    depthImageAllocInfo.setRequiredFlags( vk::MemoryPropertyFlagBits::eDeviceLocal );   // because "GPU only" and optimal tilling wkwkwk
+
+    /**
+     * @brief Creating the image
+     */
+    {
+        auto temp = _allocator.createImage( depthImageInfo, depthImageAllocInfo );
+        _depthImage.image = temp.first;
+        _depthImage.allocation = temp.second;
+    }
+
+    /**
+     * @brief Creating the image view
+     */
+    auto depthImageViewInfo = init::image::initImageViewInfo( _depthFormat, _depthImage.image, vk::ImageAspectFlagBits::eDepth );
+    _depthImageView = _device->createImageView( depthImageViewInfo );
+
+    /**
+     * @brief Push to deletion
+     */
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), a = _allocator, i = _depthImage, iv = _depthImageView](){
+            d.destroyImageView( iv );
+            a.destroyImage( i.image, i.allocation );
+        }
+    );
 }
 
 void Engine::createCommandComponent() 
@@ -152,7 +197,7 @@ void Engine::createCommandComponent()
 void Engine::createRenderPass() 
 {
     /**
-     * @brief the renderpass will use this color attachment.
+     * @brief the renderpass will use this COLOR attachment.
      */
     vk::AttachmentDescription colorAttachment {};
     //the attachment will have the format needed by the swapchain
@@ -166,16 +211,27 @@ void Engine::createRenderPass()
     //we don't care about stencil
     colorAttachment.setStencilLoadOp    ( vk::AttachmentLoadOp::eDontCare );
     colorAttachment.setStencilStoreOp   ( vk::AttachmentStoreOp::eDontCare );
-
     //we don't know or care about the starting layout of the attachment
     colorAttachment.setInitialLayout    ( vk::ImageLayout::eUndefined );
-
     //after the renderpass ends, the image has to be on a layout ready for display
     colorAttachment.setFinalLayout      ( vk::ImageLayout::ePresentSrcKHR );
 
+    /**
+     * @brief the renderpass will use this DEPTH attachment.
+     */
+    vk::AttachmentDescription depthAttachment {};
+    depthAttachment.setFormat( _depthFormat );
+    depthAttachment.setSamples( vk::SampleCountFlagBits::e1 );  // we won't use fancy sample for right now
+    depthAttachment.setLoadOp( vk::AttachmentLoadOp::eClear );
+    depthAttachment.setStoreOp( vk::AttachmentStoreOp::eStore );
+    depthAttachment.setStencilLoadOp( vk::AttachmentLoadOp::eClear );
+    depthAttachment.setStencilStoreOp( vk::AttachmentStoreOp::eDontCare );
+    depthAttachment.setInitialLayout( vk::ImageLayout::eUndefined );
+    depthAttachment.setFinalLayout( vk::ImageLayout::eDepthStencilAttachmentOptimal );
+
 
     /**
-     * @brief Color Attachment Reference, this is needed for creating Subpass
+     * @brief COLOR Attachment Reference, this is needed for creating Subpass
      */
     vk::AttachmentReference colorAttachmentRef {};
     //attachment number will index into the pAttachments array in the parent renderpass itself
@@ -183,6 +239,12 @@ void Engine::createRenderPass()
     // this layout 'll be use during subpass that use this attachment ref
     colorAttachmentRef.setLayout( vk::ImageLayout::eColorAttachmentOptimal );
 
+    /**
+     * @brief DEPTH Attachment Reference, this is needed for creating Subpass
+     */
+    vk::AttachmentReference depthAttachmentRef {};
+    depthAttachmentRef.setAttachment( 1 );
+    depthAttachmentRef.setLayout( vk::ImageLayout::eDepthStencilAttachmentOptimal );
 
     /**
      * @brief Subpass
@@ -192,6 +254,8 @@ void Engine::createRenderPass()
     subpass.setPipelineBindPoint( vk::PipelineBindPoint::eGraphics );
     // color attachment that 'll be used
     subpass.setColorAttachments( colorAttachmentRef );
+    // depth attachment that 'll be used
+    subpass.setPDepthStencilAttachment( &depthAttachmentRef );
 
     // vk::SubpassDependency subpassDependecy {};
     // subpassDependecy.setSrcSubpass( VK_SUBPASS_EXTERNAL );
@@ -201,8 +265,10 @@ void Engine::createRenderPass()
     // subpassDependecy.setDstStageMask( vk::PipelineStageFlagBits::eColorAttachmentOutput );
     // subpassDependecy.setDstAccessMask( vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite );
 
+    std::vector<vk::AttachmentDescription> attachDescs = { colorAttachment, depthAttachment };
+
     vk::RenderPassCreateInfo renderPassInfo {};
-    renderPassInfo.setAttachments( colorAttachment );
+    renderPassInfo.setAttachments( attachDescs );
     renderPassInfo.setSubpasses( subpass );
     // renderPassInfo.setDependencies( subpassDependecy );
 
@@ -225,7 +291,8 @@ void Engine::createFramebuffers()
     for( auto& imageView : _swapchainImageViews )
     {
         std::vector<vk::ImageView> attachments = {
-            imageView
+            imageView,
+            _depthImageView     // each framebuffer use the same depth image view
         };
 
         vk::FramebufferCreateInfo framebufferInfo {};
@@ -446,6 +513,9 @@ void Engine::draw()
     // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh->getMesh().vertexBuffer.buffer, offset );
 
 
+    /**
+     * @brief Math's thing hahaha
+     */
     glm::vec3 camPos = { 0.0f, 0.0f, -2.0f };
     glm::mat4 view = glm::translate( glm::mat4(1.0f), camPos );
     // camera projection
@@ -481,7 +551,6 @@ void Engine::draw()
     // );
     
     _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
-    // _mainCommandBuffer->draw( _monkeyMesh->getMesh().vertices.size(), 1, 0, 0 );
 }
 
 void Engine::record() 
@@ -516,9 +585,16 @@ void Engine::record()
             _swapchainExtent    // extent
             }
     );
+
+    // clear value for color
     vk::ClearColorValue blackMoreGreen { std::array<float, 4UL>{ 0.1f, 0.2f, 0.1f, 1.0f } };
-    vk::ClearValue clearColor { blackMoreGreen };
-    renderPassBeginInfo.setClearValues( clearColor );
+    // clear value for depth
+    vk::ClearDepthStencilValue depthStencilDepthValue {};
+    depthStencilDepthValue.setDepth( 1.0f );
+
+    std::vector<vk::ClearValue> clearValue = { blackMoreGreen, depthStencilDepthValue };
+
+    renderPassBeginInfo.setClearValues( clearValue );
 
     _mainCommandBuffer->beginRenderPass( renderPassBeginInfo, vk::SubpassContents::eInline );
 
@@ -574,26 +650,26 @@ void Engine::endFrame()
 
 void Engine::loadTriangleMesh() 
 {
-    _triangleMesh.vertices.resize( 3 );
+    // _triangleMesh.vertices.resize( 3 );
 
-    /**
-     * @brief Vertex Position
-     */
-    _triangleMesh.vertices[0].position = { 0.0, -0.5f, 0.0f };
-    _triangleMesh.vertices[1].position = { 0.5, 0.5f, 0.0f };
-    _triangleMesh.vertices[2].position = { -0.5, 0.5f, 0.0f };
+    // /**
+    //  * @brief Vertex Position
+    //  */
+    // _triangleMesh.vertices[0].position = { 0.0, -0.5f, 0.0f };
+    // _triangleMesh.vertices[1].position = { 0.5, 0.5f, 0.0f };
+    // _triangleMesh.vertices[2].position = { -0.5, 0.5f, 0.0f };
 
-    /**
-     * @brief Vertex Color
-     */
-    _triangleMesh.vertices[0].color = { 1.0f, 0.0f, 0.0f };
-    _triangleMesh.vertices[1].color = { 0.0f, 1.0f, 0.0f };
-    _triangleMesh.vertices[2].color = { 0.0f, 0.0f, 1.0f };
+    // /**
+    //  * @brief Vertex Color
+    //  */
+    // _triangleMesh.vertices[0].color = { 1.0f, 0.0f, 0.0f };
+    // _triangleMesh.vertices[1].color = { 0.0f, 1.0f, 0.0f };
+    // _triangleMesh.vertices[2].color = { 0.0f, 0.0f, 1.0f };
 
-    // _monkeyMesh.loadFromObj( "assets/monkey_smooth.obj" );
+    // // _monkeyMesh.loadFromObj( "assets/monkey_smooth.obj" );
 
-    // uploadMesh( _triangleMesh );
-    // uploadMesh( _monkeyMesh );
+    // // uploadMesh( _triangleMesh );
+    // // uploadMesh( _monkeyMesh );
 }
 
 void Engine::uploadMesh(Mesh& mesh) 
@@ -682,7 +758,14 @@ void Engine::createMonkeyMeshPipeline()
         }
     );
 
+    /**
+     * @brief Depth Stencil Info
+     */
+    auto depthStencilInfo = GraphicsPipeline::createDepthStencilInfo( true, true, vk::CompareOp::eLessOrEqual );
 
+    /**
+     * @brief init default pipeline builder
+     */
     GraphicsPipeline builder;
     builder.init( _device.get(), "shaders/tri_mesh_vertex.spv", "shaders/frag.spv", _swapchainExtent, _mainDeletionQueue );
 
@@ -692,6 +775,12 @@ void Engine::createMonkeyMeshPipeline()
     builder.m_vertexInputDesc = Vertex::getVertexInputDescription();
     builder.m_vertexInputStateInfo.setVertexBindingDescriptions( builder.m_vertexInputDesc.bindings );
     builder.m_vertexInputStateInfo.setVertexAttributeDescriptions( builder.m_vertexInputDesc.attributs );
+
+    /**
+     * @brief initialize the depth stencil
+     */
+    builder.m_useDepthStencil = true;
+    builder.m_depthStencilStateInfo = depthStencilInfo;
 
     builder.createGraphicsPipeline( _renderPass, _monkeyPipelineLayout, _mainDeletionQueue );
     _monkeyGraphicsPipeline = builder.m_graphicsPipeline;

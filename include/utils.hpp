@@ -14,6 +14,12 @@ struct AllocatedBuffer
     vma::Allocation allocation;
 };
 
+struct AllocatedImage
+{
+    vk::Image image;
+    vma::Allocation allocation;
+};
+
 struct VertexInputDescription
 {
     std::vector<vk::VertexInputBindingDescription> bindings;
