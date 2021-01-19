@@ -587,12 +587,12 @@ void Engine::record()
     );
 
     // clear value for color
-    vk::ClearColorValue blackMoreGreen { std::array<float, 4UL>{ 0.1f, 0.2f, 0.1f, 1.0f } };
+    vk::ClearColorValue colorClearValue = { std::array<float, 4UL>{ 0.0f, 0.0f, 0.0f, 1.0f } };
     // clear value for depth
-    vk::ClearDepthStencilValue depthStencilDepthValue {};
-    depthStencilDepthValue.setDepth( 1.0f );
+    vk::ClearDepthStencilValue depthStencilClearValue {};
+    depthStencilClearValue.setDepth( 1.0f );
 
-    std::vector<vk::ClearValue> clearValue = { blackMoreGreen, depthStencilDepthValue };
+    std::vector<vk::ClearValue> clearValue = { colorClearValue, depthStencilClearValue };
 
     renderPassBeginInfo.setClearValues( clearValue );
 
@@ -767,7 +767,7 @@ void Engine::createMonkeyMeshPipeline()
      * @brief init default pipeline builder
      */
     GraphicsPipeline builder;
-    builder.init( _device.get(), "shaders/tri_mesh_vertex.spv", "shaders/frag.spv", _swapchainExtent, _mainDeletionQueue );
+    builder.init( _device.get(), "shaders/tri_mesh_vertex.spv", "shaders/frag.spv", _swapchainExtent );
 
     /**
      * @brief Vertex Input state info

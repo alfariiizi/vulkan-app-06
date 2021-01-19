@@ -15,8 +15,7 @@
 void GraphicsPipeline::init( vk::Device device,
             const std::string& vertFile, 
             const std::string& fragFile,
-            const vk::Extent2D& windowExtent,
-            DeletionQueue& deletor
+            const vk::Extent2D& windowExtent
 )
 {
     this->device = device;
