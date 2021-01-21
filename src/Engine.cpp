@@ -52,7 +52,7 @@ void Engine::initVulkan()
     createSwapchainComponent();
     createRenderPass();
     createFramebuffers();
-    createGraphicsPipeline();
+    createObjectToRender();
     createCommandComponent();
     createSyncObject();
 }
@@ -327,145 +327,6 @@ void Engine::createSyncObject()
 
 }
 
-
-// void Engine::createGraphicsPipeline() 
-// {
-//     auto vertShaderCode = utils::gp::readFile( "shaders/vert.spv" );
-//     auto fragShaderCode = utils::gp::readFile( "shaders/frag.spv" );
-
-//     auto vertShaderModule = utils::gp::createShaderModule( _device.get(), vertShaderCode );
-//     auto fragShaderModule = utils::gp::createShaderModule( _device.get(), fragShaderCode );
-
-//     vk::PipelineShaderStageCreateInfo vertexShader {};
-//     vertexShader.setStage( vk::ShaderStageFlagBits::eVertex );
-//     vertexShader.setModule( vertShaderModule.get() );
-//     vertexShader.setPName( "main" );
-
-//     vk::PipelineShaderStageCreateInfo fragShader {};
-//     fragShader.setStage( vk::ShaderStageFlagBits::eFragment );
-//     fragShader.setModule( fragShaderModule.get() );
-//     fragShader.setPName( "main" );
-
-
-//     std::vector<vk::PipelineShaderStageCreateInfo> stages = { vertexShader, fragShader };
-
-
-//     /**
-//      * @brief Vertex Input State
-//      */
-//     vk::PipelineVertexInputStateCreateInfo vertexInputStateInfo {};
-//     vertexInputStateInfo.setVertexBindingDescriptions       ( nullptr );
-//     vertexInputStateInfo.setVertexAttributeDescriptions     ( nullptr );
-
-
-//     /**
-//      * @brief Input Assembly State
-//      */
-//     vk::PipelineInputAssemblyStateCreateInfo inputAssemblyStateInfo {};
-//     inputAssemblyStateInfo.setTopology                 ( vk::PrimitiveTopology::eTriangleList );
-//     inputAssemblyStateInfo.setPrimitiveRestartEnable   ( VK_FALSE );
-
-
-//     /**
-//      * @brief Viewport State
-//      */
-//     vk::Viewport viewport {};
-//     viewport.setX       ( 0.0f );
-//     viewport.setY       ( 0.0f );
-//     viewport.setWidth   ( static_cast<float>( _swapchainExtent.width ) );
-//     viewport.setHeight  ( static_cast<float>( _swapchainExtent.height ) );
-//     viewport.setMinDepth( 0.0f );
-//     viewport.setMaxDepth( 1.0f );
-
-//     vk::Rect2D scissor {};
-//     scissor.setOffset( vk::Offset2D{ 0, 0 } );
-//     scissor.setExtent( _swapchainExtent );
-
-//     vk::PipelineViewportStateCreateInfo viewportStateInfo{};
-//     viewportStateInfo.setViewports  ( viewport );
-//     viewportStateInfo.setScissors   ( scissor );
-
-
-//     /**
-//      * @brief Rasterization State
-//      */
-//     vk::PipelineRasterizationStateCreateInfo rasterizationStateInfo {};
-//     rasterizationStateInfo.setDepthClampEnable          ( VK_FALSE );
-//     rasterizationStateInfo.setRasterizerDiscardEnable   ( VK_FALSE );
-//     rasterizationStateInfo.setPolygonMode               ( vk::PolygonMode::eFill );
-//     rasterizationStateInfo.setCullMode                  ( vk::CullModeFlagBits::eBack );
-//     rasterizationStateInfo.setFrontFace                 ( vk::FrontFace::eClockwise );
-//     // depth bias. If this false, then 4 arguments ahead are ignored
-//     rasterizationStateInfo.setDepthBiasEnable           ( VK_FALSE );
-//     rasterizationStateInfo.setLineWidth                 ( 1.0f );
-
-
-//     /**
-//      * @brief Multisampling State
-//      */
-//     vk::PipelineMultisampleStateCreateInfo multisampleStateInfo {};
-//     multisampleStateInfo.setRasterizationSamples( vk::SampleCountFlagBits::e1 );
-//     multisampleStateInfo.setSampleShadingEnable ( VK_FALSE );
-
-
-//     /**
-//      * @brief Color Blend State
-//      */
-//     vk::PipelineColorBlendAttachmentState colorBlendAttachmentState {};
-//     colorBlendAttachmentState.setBlendEnable( VK_FALSE );
-//     colorBlendAttachmentState.setColorWriteMask( 
-//         vk::ColorComponentFlagBits::eR 
-//         | vk::ColorComponentFlagBits::eG
-//         | vk::ColorComponentFlagBits::eB
-//         | vk::ColorComponentFlagBits::eA 
-//     );
-
-//     vk::PipelineColorBlendStateCreateInfo colorBlendStateInfo {};
-//     colorBlendStateInfo.setLogicOpEnable    ( VK_FALSE );
-//     colorBlendStateInfo.setLogicOp          ( vk::LogicOp::eCopy );
-//     colorBlendStateInfo.setAttachments      ( colorBlendAttachmentState );
-//     colorBlendStateInfo.setBlendConstants   ( { 0.0f, 0.0f, 0.0f, 0.0f } );
-
-
-//     vk::GraphicsPipelineCreateInfo gpi {};  // graphics pipeline info
-//     gpi.setStages                  ( stages                     );
-//     gpi.setPVertexInputState       ( &vertexInputStateInfo      );
-//     gpi.setPInputAssemblyState     ( &inputAssemblyStateInfo    );
-//     gpi.setPTessellationState      ( nullptr                    );
-//     gpi.setPViewportState          ( &viewportStateInfo         );
-//     gpi.setPRasterizationState     ( &rasterizationStateInfo    );
-//     gpi.setPMultisampleState       ( &multisampleStateInfo      );
-//     gpi.setPDepthStencilState      ( nullptr                    );
-//     gpi.setPColorBlendState        ( &colorBlendStateInfo       );
-//     gpi.setPDynamicState           ( nullptr                    );
-//     gpi.setLayout                  ( _pipelineLayout            );
-//     gpi.setRenderPass              ( _renderPass                );
-//     gpi.setSubpass                 ( 0                          );
-//     gpi.setBasePipelineHandle      ( nullptr                    );
-//     gpi.setBasePipelineIndex       ( 0                          );
-
-//     try
-//     {
-//         _graphicsPipeline = _device->createGraphicsPipeline( nullptr, gpi ).value;
-//     } ENGINE_CATCH
-
-//     _mainDeletionQueue.pushFunction(
-//         [d = _device.get(), gp = _graphicsPipeline](){
-//             d.destroyPipeline( gp );
-//         }
-//     );
-
-// }
-
-// void Engine::createSyncObject() 
-// {
-//     try
-//     {
-//         _presentSemaphore = _device->createSemaphoreUnique( {} );
-//         _renderFence = _device->createFenceUnique( vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled } );
-//     } ENGINE_CATCH
-// }
-
 void Engine::createMemoryAllocator() 
 {
     vma::AllocatorCreateInfo allocatorInfo {};
@@ -495,62 +356,64 @@ void Engine::beginFrame()
     _device->resetFences( _renderFence.get() );
 }
 
-void Engine::draw() 
+void Engine::draw( vk::CommandBuffer cmd ) 
 {
-    /**
-     * @brief Bind the graphics pipeline
-     */
-    // _mainCommandBuffer->bindPipeline( 
-    //     vk::PipelineBindPoint::eGraphics,       // pipeline bind point (in the future, it could be compute pipeline)
-    //     _graphicsPipeline                       // the pipeline
-    // );
-    // _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _graphicsTriangleMeshPipeline );
-    _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _monkeyGraphicsPipeline );
+    // /**
+    //  * @brief Bind the graphics pipeline
+    //  */
+    // // _mainCommandBuffer->bindPipeline( 
+    // //     vk::PipelineBindPoint::eGraphics,       // pipeline bind point (in the future, it could be compute pipeline)
+    // //     _graphicsPipeline                       // the pipeline
+    // // );
+    // // _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _graphicsTriangleMeshPipeline );
+    // _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _monkeyGraphicsPipeline );
 
-    vk::DeviceSize offset = 0;
-    // _mainCommandBuffer->bindVertexBuffers( 0, _triangleMesh.vertexBuffer.buffer, offset );
-    _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh.vertexBuffer.buffer, offset );
-    // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh->getMesh().vertexBuffer.buffer, offset );
+    // vk::DeviceSize offset = 0;
+    // // _mainCommandBuffer->bindVertexBuffers( 0, _triangleMesh.vertexBuffer.buffer, offset );
+    // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh.vertexBuffer.buffer, offset );
+    // // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh->getMesh().vertexBuffer.buffer, offset );
 
 
-    /**
-     * @brief Math's thing hahaha
-     */
-    glm::vec3 camPos = { 0.0f, 0.0f, -2.0f };
-    glm::mat4 view = glm::translate( glm::mat4(1.0f), camPos );
-    // camera projection
-    glm::mat4 projection = glm::perspective( glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f );
-    projection[1][1] *= -1.0f;
-    // model rotation
-    glm::mat4 model = glm::rotate( glm::mat4(1.0f), glm::radians( _frameNumber * 0.4f ), glm::vec3( 0.0f, 1.0f, 0.0f ) );
+    // /**
+    //  * @brief Math's thing hahaha
+    //  */
+    // glm::vec3 camPos = { 0.0f, 0.0f, -2.0f };
+    // glm::mat4 view = glm::translate( glm::mat4(1.0f), camPos );
+    // // camera projection
+    // glm::mat4 projection = glm::perspective( glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f );
+    // projection[1][1] *= -1.0f;
+    // // model rotation
+    // glm::mat4 model = glm::rotate( glm::mat4(1.0f), glm::radians( _frameNumber * 0.4f ), glm::vec3( 0.0f, 1.0f, 0.0f ) );
 
-    // calculate final matrix mesh
-    glm::mat4 matrixMesh = projection * view * model;
+    // // calculate final matrix mesh
+    // glm::mat4 matrixMesh = projection * view * model;
     
-    MeshPushConstant meshPushConstant;
-    meshPushConstant.renderMatrix = matrixMesh;
+    // MeshPushConstant meshPushConstant;
+    // meshPushConstant.renderMatrix = matrixMesh;
 
-    // _mainCommandBuffer->pushConstants<MeshPushConstant>( _meshPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
-    _mainCommandBuffer->pushConstants<MeshPushConstant>( _monkeyPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
+    // // _mainCommandBuffer->pushConstants<MeshPushConstant>( _meshPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
+    // _mainCommandBuffer->pushConstants<MeshPushConstant>( _monkeyPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
 
-    /**
-     * @brief Drawing
-     */
-    // _mainCommandBuffer->draw(
-    //     3,      // vertex count ( triangle has 3 vertices, right )
-    //     1,      // instance count ( it's not the instance handle, but how many object will be draw, I'll draw 1 triangle, so just 1 instance )
-    //     0,      // first vertex ( I'll be draw the vertex from index 0 )
-    //     0       // first instance ( I'll be draw the instance from index 0 )
-    // );
+    // /**
+    //  * @brief Drawing
+    //  */
+    // // _mainCommandBuffer->draw(
+    // //     3,      // vertex count ( triangle has 3 vertices, right )
+    // //     1,      // instance count ( it's not the instance handle, but how many object will be draw, I'll draw 1 triangle, so just 1 instance )
+    // //     0,      // first vertex ( I'll be draw the vertex from index 0 )
+    // //     0       // first instance ( I'll be draw the instance from index 0 )
+    // // );
 
-    // _mainCommandBuffer->draw(
-    //     _triangleMesh.vertices.size(),
-    //     1,
-    //     0,
-    //     0
-    // );
+    // // _mainCommandBuffer->draw(
+    // //     _triangleMesh.vertices.size(),
+    // //     1,
+    // //     0,
+    // //     0
+    // // );
     
-    _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
+    // _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
+
+    _sceneManag.drawObject( cmd );
 }
 
 void Engine::record() 
@@ -598,7 +461,7 @@ void Engine::record()
 
     _mainCommandBuffer->beginRenderPass( renderPassBeginInfo, vk::SubpassContents::eInline );
 
-    draw();
+    draw( _mainCommandBuffer.get() );
 
     /**
      * @brief End to Record the renderpass
@@ -648,30 +511,6 @@ void Engine::endFrame()
         throw std::runtime_error( "Failed to presenting (_presentQueue)" );
 }
 
-void Engine::loadTriangleMesh() 
-{
-    // _triangleMesh.vertices.resize( 3 );
-
-    // /**
-    //  * @brief Vertex Position
-    //  */
-    // _triangleMesh.vertices[0].position = { 0.0, -0.5f, 0.0f };
-    // _triangleMesh.vertices[1].position = { 0.5, 0.5f, 0.0f };
-    // _triangleMesh.vertices[2].position = { -0.5, 0.5f, 0.0f };
-
-    // /**
-    //  * @brief Vertex Color
-    //  */
-    // _triangleMesh.vertices[0].color = { 1.0f, 0.0f, 0.0f };
-    // _triangleMesh.vertices[1].color = { 0.0f, 1.0f, 0.0f };
-    // _triangleMesh.vertices[2].color = { 0.0f, 0.0f, 1.0f };
-
-    // // _monkeyMesh.loadFromObj( "assets/monkey_smooth.obj" );
-
-    // // uploadMesh( _triangleMesh );
-    // // uploadMesh( _monkeyMesh );
-}
-
 void Engine::uploadMesh(Mesh& mesh) 
 {
     size_t size = mesh.vertices.size() * sizeof(Vertex);
@@ -697,47 +536,91 @@ void Engine::uploadMesh(Mesh& mesh)
     _allocator.unmapMemory( mesh.vertexBuffer.allocation );
 }
 
-void Engine::createGraphicsPipeline() 
+void Engine::createObjectToRender() 
 {
-    // createTriangleMeshPipeline();
-    createMonkeyMeshPipeline();
+    createMeshes();
+    createMaterials();
+    initRenderObject();
 }
 
-void Engine::createTriangleMeshPipeline() 
+void Engine::createMaterials() 
 {
-    // GraphicsPipeline builder;
-    // builder.init( _device.get(), "shaders/vert.spv", "shaders/frag.spv", _swapchainExtent, _mainDeletionQueue );
-
-    // /**
-    //  * @brief Vertex Input state
-    //  */
-    // builder.m_vertexInputDesc = Vertex::getVertexInputDescription();
-    // builder.m_vertexInputStateInfo.setVertexBindingDescriptions( builder.m_vertexInputDesc.bindings );
-    // builder.m_vertexInputStateInfo.setVertexAttributeDescriptions( builder.m_vertexInputDesc.attributs );
-
-    // builder.createGraphicsPipeline( _renderPass, _mainDeletionQueue );
-    // _graphicsTriangleMeshPipeline = builder.m_graphicsPipeline;
-
-    // /**
-    //  * @brief Vertex Position
-    //  */
-    // _triangleMesh.vertices[0].position = { 0.0, -0.5f, 0.0f };
-    // _triangleMesh.vertices[1].position = { 0.5, 0.5f, 0.0f };
-    // _triangleMesh.vertices[2].position = { -0.5, 0.5f, 0.0f };
-
-    // /**
-    //  * @brief Vertex Color
-    //  */
-    // _triangleMesh.vertices[0].color = { 1.0f, 0.0f, 0.0f };
-    // _triangleMesh.vertices[1].color = { 0.0f, 1.0f, 0.0f };
-    // _triangleMesh.vertices[2].color = { 0.0f, 0.0f, 1.0f };
+    defaultMaterial();
 }
 
-void Engine::createMonkeyMeshPipeline() 
+void Engine::initRenderObject() 
 {
-    _monkeyMesh.loadFromObj("resources/monkey_smooth.obj");
-    uploadMesh( _monkeyMesh );
-    
+    RenderObject monkey;
+    monkey.pMesh = _sceneManag.getPMehs( "monkey" );
+    assert( monkey.pMesh != nullptr );
+    monkey.pMaterial = _sceneManag.getPMaterial( "defaultMaterial" );
+    assert( monkey.pMaterial != nullptr );
+    monkey.transformMatrix = glm::mat4( 1.0f );
+    _sceneManag.pushRenderableObject( monkey );
+
+    for( int x = -20; x <= 20; ++x )
+    {
+        for( int y = -20; y <= 20; ++y )
+        {
+            RenderObject triangle;
+            triangle.pMesh = _sceneManag.getPMehs( "triangle" );
+            assert( triangle.pMesh != nullptr );
+            triangle.pMaterial = _sceneManag.getPMaterial( "defaultMaterial" );
+            assert( triangle.pMaterial != nullptr );
+
+            glm::mat4 translation = glm::translate( glm::mat4{ 1.0f }, glm::vec3{ x, 0, y } );
+            glm::mat4 scale = glm::scale( glm::mat4{ 1.0f }, glm::vec3{ 0.2f, 0.2f, 0.2f } );
+            triangle.transformMatrix = translation * scale;
+
+            _sceneManag.pushRenderableObject( triangle );
+        }
+    }
+}
+
+void Engine::createMeshes() 
+{
+    createTriangleMesh();
+    createMonkeyMesh();
+}
+
+void Engine::createTriangleMesh() 
+{
+    Mesh triangleMesh;
+    triangleMesh.vertices.resize( 3 );
+
+    /**
+     * @brief Vertex Position
+     */
+    triangleMesh.vertices[0].position = { 1.0f, 1.0f, 0.5f };
+    triangleMesh.vertices[1].position = { -1.0f, 1.0f, 0.5f };
+    triangleMesh.vertices[2].position = { 0.0f, -1.0f, 0.5f };
+
+    /**
+     * @brief Vertex Color
+     */
+    triangleMesh.vertices[0].color = { 1.0f, 0.0f, 0.0f };
+    triangleMesh.vertices[1].color = { 0.0f, 1.0f, 0.0f };
+    triangleMesh.vertices[2].color = { 0.0f, 0.0f, 1.0f };
+
+    uploadMesh( triangleMesh );
+
+    _sceneManag.createMesh( triangleMesh, "triangle" );
+}
+
+void Engine::createMonkeyMesh() 
+{
+    Mesh monkeyMesh;
+    monkeyMesh.loadFromObj( "resources/monkey_smooth.obj" );
+    uploadMesh( monkeyMesh );
+
+    _sceneManag.createMesh( monkeyMesh, "monkey" );
+}
+
+void Engine::defaultMaterial() 
+{
+    vk::PipelineLayout layout;
+    vk::Pipeline pipeline;
+
     /**
      * @brief Pipeline layout info
      */
@@ -750,10 +633,10 @@ void Engine::createMonkeyMeshPipeline()
     pipelineLayoutInfo.setPushConstantRanges( pushConstant );
     try
     {
-        _monkeyPipelineLayout = _device->createPipelineLayout( pipelineLayoutInfo );
+        layout = _device->createPipelineLayout( pipelineLayoutInfo );
     } ENGINE_CATCH
     _mainDeletionQueue.pushFunction(
-        [d = _device.get(), pl = _monkeyPipelineLayout](){
+        [d = _device.get(), pl = layout](){
             d.destroyPipelineLayout( pl );
         }
     );
@@ -782,6 +665,8 @@ void Engine::createMonkeyMeshPipeline()
     builder.m_useDepthStencil = true;
     builder.m_depthStencilStateInfo = depthStencilInfo;
 
-    builder.createGraphicsPipeline( _renderPass, _monkeyPipelineLayout, _mainDeletionQueue );
-    _monkeyGraphicsPipeline = builder.m_graphicsPipeline;
+    builder.createGraphicsPipeline( _renderPass, layout, _mainDeletionQueue );
+    pipeline = builder.m_graphicsPipeline;
+
+    _sceneManag.createMaterial( pipeline, layout, "defaultMaterial" );
 }

@@ -10,6 +10,7 @@
 
 #include "DeletionQueue.hpp"
 #include "Mesh.hpp"
+#include "SceneManagement.hpp"
 
 class Engine
 {
@@ -39,33 +40,33 @@ private:
 
 private:
     void beginFrame();  // begin to wait and reset the fence
-    void draw();
+    void draw( vk::CommandBuffer cmd );
     void record();      // recording
     void endFrame();    // executing the command
 
 private:
-    void loadTriangleMesh();
     void uploadMesh( Mesh& mesh );
 
 private:
-    void createGraphicsPipeline();
-    void createTrianglePipeline();
-    void createTriangleMeshPipeline();
-    void createMonkeyMeshPipeline();
+    void createObjectToRender();
+    void createMaterials();
+    void createMeshes();
+    void initRenderObject();
 
 private:
-    // Mesh _triangleMesh;
-    // vk::PipelineLayout _meshPipelineLayout;
-    // vk::Pipeline _graphicsTriangleMeshPipeline;
+    void createTriangleMesh();
+    void createMonkeyMesh();
 
 private:
-    // Mesh _monkeyMesh;
+    void defaultMaterial();
 
-// this private just to make sure that GraphicsPipeline class has no error
 private:
-    Mesh _monkeyMesh;
-    vk::PipelineLayout _monkeyPipelineLayout;
-    vk::Pipeline _monkeyGraphicsPipeline;
+    SceneManagement _sceneManag;
+
+private:
+    std::vector<RenderObject> _renderables;
+    std::unordered_map<std::string, Material> _materials;
+    std::unordered_map<std::string, Mesh> _meshes;
 
 public:
     static constexpr unsigned int ScreenWidth       = 800U;

@@ -7,7 +7,6 @@
 
 #include "vk_mem_alloc.hpp"
 
-
 struct AllocatedBuffer
 {
     vk::Buffer buffer;
