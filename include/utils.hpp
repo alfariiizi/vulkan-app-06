@@ -32,3 +32,13 @@ struct MeshPushConstant         // 16 bytes + 64 bytes = 80 bytes (max size yg d
     glm::vec4 data;             // 4 floats = 16 bytes
     glm::mat4 renderMatrix;    // 16 floats = 64 bytes
 };
+
+struct FrameData
+{
+    vk::Semaphore presentSemaphore;
+    vk::Semaphore renderSemaphore;
+    vk::Fence renderFence;
+
+    vk::CommandPool commandPool;
+    vk::CommandBuffer mainCommandBuffer;
+};

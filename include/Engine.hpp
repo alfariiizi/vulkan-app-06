@@ -12,6 +12,8 @@
 #include "Mesh.hpp"
 #include "SceneManagement.hpp"
 
+#define FRAME_OVERLAP 2
+
 class Engine
 {
 public:
@@ -68,6 +70,10 @@ private:
     std::unordered_map<std::string, Material> _materials;
     std::unordered_map<std::string, Mesh> _meshes;
 
+private:
+    std::array<FrameData, FRAME_OVERLAP> _frames;
+    FrameData& getCurrentFrame();
+
 public:
     static constexpr unsigned int ScreenWidth       = 800U;
     static constexpr unsigned int ScreenHeight      = 600U;
@@ -110,14 +116,14 @@ private:
     uint32_t                _frameNumber = 0;
 
 private:
-    vk::UniqueCommandPool                   _commandPool;
-    // std::vector<vk::UniqueCommandBuffer>    _commandBuffers;
-    vk::UniqueCommandBuffer                 _mainCommandBuffer;
+    // vk::UniqueCommandPool                   _commandPool;
+    // // std::vector<vk::UniqueCommandBuffer>    _commandBuffers;
+    // vk::UniqueCommandBuffer                 _mainCommandBuffer;
 
 private:
-    vk::UniqueSemaphore  _renderSemaphore;
-    vk::UniqueSemaphore  _presentSemaphore;
-    vk::UniqueFence      _renderFence;
+    // vk::UniqueSemaphore  _renderSemaphore;
+    // vk::UniqueSemaphore  _presentSemaphore;
+    // vk::UniqueFence      _renderFence;
     size_t               _currentFrame                 = 0;
     unsigned long        _timeOut                      = 1000000000;   // 1 second = 10^(9) nano second
     uint32_t             _imageIndex                   = 0;

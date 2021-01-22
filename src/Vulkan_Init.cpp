@@ -239,7 +239,7 @@ void init::sc::retrieveImagesAndCreateImageViews( const vk::Device& device, cons
     }
 }
 
-vk::UniqueCommandPool init::cm::createCommandPool( const vk::PhysicalDevice& physicalDevice, const vk::SurfaceKHR& surface, const vk::Device& device )
+vk::CommandPool init::cm::createCommandPool( const vk::PhysicalDevice& physicalDevice, const vk::SurfaceKHR& surface, const vk::Device& device )
 {
     auto graphicsAndPresentQueueFamilyIndex = utils::FindQueueFamilyIndices( physicalDevice, surface );
 
@@ -249,11 +249,11 @@ vk::UniqueCommandPool init::cm::createCommandPool( const vk::PhysicalDevice& phy
 
     try
     {
-        return device.createCommandPoolUnique( cmdPoolInfo );
+        return device.createCommandPool( cmdPoolInfo );
     } ENGINE_CATCH
 }
 
-std::vector<vk::UniqueCommandBuffer> init::cm::createCommandBuffers( const vk::Device& device, const vk::CommandPool& cmdPool, vk::CommandBufferLevel level, uint32_t count )
+std::vector<vk::CommandBuffer> init::cm::createCommandBuffers( const vk::Device& device, const vk::CommandPool& cmdPool, vk::CommandBufferLevel level, uint32_t count )
 {
     vk::CommandBufferAllocateInfo cmdBufferAllocInfo {};
     cmdBufferAllocInfo.setCommandPool( cmdPool );
@@ -262,7 +262,7 @@ std::vector<vk::UniqueCommandBuffer> init::cm::createCommandBuffers( const vk::D
 
     try
     {
-        return device.allocateCommandBuffersUnique( cmdBufferAllocInfo );
+        return device.allocateCommandBuffers( cmdBufferAllocInfo );
     } ENGINE_CATCH
 }
 

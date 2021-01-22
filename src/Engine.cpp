@@ -190,8 +190,17 @@ void Engine::createSwapchainComponent()
 
 void Engine::createCommandComponent() 
 {
-    _commandPool = init::cm::createCommandPool( _physicalDevice, _surface, _device.get() );
-    _mainCommandBuffer = std::move( init::cm::createCommandBuffers( _device.get(), _commandPool.get(), vk::CommandBufferLevel::ePrimary, 1 ).front() );
+    for( size_t i = 0; i < FRAME_OVERLAP; ++i )
+    {
+        _frames[i].commandPool = init::cm::createCommandPool( _physicalDevice, _surface, _device.get() );
+        _frames[i].mainCommandBuffer = init::cm::createCommandBuffers( _device.get(), _frames[i].commandPool, vk::CommandBufferLevel::ePrimary, 1 ).front();
+
+        _mainDeletionQueue.pushFunction(
+            [d = _device.get(), cp = _frames[i].commandPool](){
+                d.destroyCommandPool( cp );
+            }
+        );
+    }
 }
 
 void Engine::createRenderPass() 
@@ -318,13 +327,23 @@ void Engine::createFramebuffers()
 
 void Engine::createSyncObject() 
 {
-    try
+    for( size_t i = 0; i < FRAME_OVERLAP; ++i )
     {
-        _renderSemaphore = _device->createSemaphoreUnique( {} );
-        _presentSemaphore = _device->createSemaphoreUnique( {} );
-        _renderFence = _device->createFenceUnique( vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled } );
-    } ENGINE_CATCH
+        try
+        {
+            _frames[i].presentSemaphore = _device->createSemaphore( {} );
+            _frames[i].renderSemaphore = _device->createSemaphore( {} );
+            _frames[i].renderFence = _device->createFence( vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled } );
 
+            _mainDeletionQueue.pushFunction(
+                [ d = _device.get(), ps = _frames[i].presentSemaphore, rs = _frames[i].renderSemaphore, f = _frames[i].renderFence](){
+                    d.destroySemaphore( ps );
+                    d.destroySemaphore( rs );
+                    d.destroyFence( f );
+                }
+            );
+        } ENGINE_CATCH
+    }
 }
 
 void Engine::createMemoryAllocator() 
@@ -349,11 +368,11 @@ void Engine::createMemoryAllocator()
 void Engine::beginFrame() 
 {
     vk::Result result;
-    result = _device->waitForFences( _renderFence.get(), VK_TRUE, _timeOut );
+    result = _device->waitForFences( getCurrentFrame().renderFence, VK_TRUE, _timeOut );
     if( result != vk::Result::eSuccess )
         throw std::runtime_error( "Failed to wait for Fences" );
 
-    _device->resetFences( _renderFence.get() );
+    _device->resetFences( getCurrentFrame().renderFence );
 }
 
 void Engine::draw( vk::CommandBuffer cmd ) 
@@ -420,11 +439,11 @@ void Engine::record()
 {
     _imageIndex = _device->acquireNextImageKHR( _swapchain, 
                             _timeOut, 
-                            _presentSemaphore.get(), 
+                            getCurrentFrame().presentSemaphore, 
                             nullptr 
     ).value;
 
-    _mainCommandBuffer->reset();
+    getCurrentFrame().mainCommandBuffer.reset();
 
     vk::CommandBufferBeginInfo beginInfo {};
     beginInfo.setFlags( vk::CommandBufferUsageFlagBits::eOneTimeSubmit );    // this flag is important too, but right now I'll not use that
@@ -432,7 +451,7 @@ void Engine::record()
 
     try
     {
-        _mainCommandBuffer->begin( beginInfo );
+        getCurrentFrame().mainCommandBuffer.begin( beginInfo );
     } ENGINE_CATCH
 
 
@@ -459,14 +478,14 @@ void Engine::record()
 
     renderPassBeginInfo.setClearValues( clearValue );
 
-    _mainCommandBuffer->beginRenderPass( renderPassBeginInfo, vk::SubpassContents::eInline );
+    getCurrentFrame().mainCommandBuffer.beginRenderPass( renderPassBeginInfo, vk::SubpassContents::eInline );
 
-    draw( _mainCommandBuffer.get() );
+    draw( getCurrentFrame().mainCommandBuffer );
 
     /**
      * @brief End to Record the renderpass
      */
-    _mainCommandBuffer->endRenderPass();
+    getCurrentFrame().mainCommandBuffer.endRenderPass();
 
 
     /**
@@ -474,7 +493,7 @@ void Engine::record()
      */
     try
     {
-        _mainCommandBuffer->end();
+        getCurrentFrame().mainCommandBuffer.end();
     } ENGINE_CATCH
 }
 
@@ -486,13 +505,13 @@ void Engine::endFrame()
     vk::SubmitInfo submitInfo {};
     vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
-    submitInfo.setWaitSemaphores( _presentSemaphore.get() );
+    submitInfo.setWaitSemaphores( getCurrentFrame().presentSemaphore );
     submitInfo.setWaitDstStageMask( waitStage );
-    submitInfo.setCommandBuffers( _mainCommandBuffer.get() );
-    submitInfo.setSignalSemaphores( _renderSemaphore.get() );
+    submitInfo.setCommandBuffers( getCurrentFrame().mainCommandBuffer );
+    submitInfo.setSignalSemaphores( getCurrentFrame().renderSemaphore );
     try
     {
-        _graphicsQueue.submit( submitInfo, _renderFence.get() );
+        _graphicsQueue.submit( submitInfo, getCurrentFrame().renderFence );
     } ENGINE_CATCH
 
 
@@ -500,7 +519,7 @@ void Engine::endFrame()
      * @brief Present Info ( it's just the present queue )
      */
     vk::PresentInfoKHR presentInfo {};
-    presentInfo.setWaitSemaphores( _renderSemaphore.get() );
+    presentInfo.setWaitSemaphores( getCurrentFrame().renderSemaphore );
 
     std::vector<vk::SwapchainKHR> swapchains = { _swapchain };
     presentInfo.setSwapchains( swapchains );
@@ -669,4 +688,9 @@ void Engine::defaultMaterial()
     pipeline = builder.m_graphicsPipeline;
 
     _sceneManag.createMaterial( pipeline, layout, "defaultMaterial" );
+}
+
+FrameData& Engine::getCurrentFrame() 
+{
+    _frames[ _frameNumber % FRAME_OVERLAP ];
 }
