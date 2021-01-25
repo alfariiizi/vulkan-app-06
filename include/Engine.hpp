@@ -63,6 +63,13 @@ private:
     void defaultMaterial();
 
 private:
+    void initDescriptors();
+
+private:
+    vk::DescriptorSetLayout _globalSetLayout;
+    vk::DescriptorPool _descriptorPool;
+
+private:
     SceneManagement _sceneManag;
 
 private:

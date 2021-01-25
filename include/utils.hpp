@@ -11,6 +11,8 @@ struct AllocatedBuffer
 {
     vk::Buffer buffer;
     vma::Allocation allocation;
+
+    static AllocatedBuffer createBuffer( size_t allocSize, vk::BufferUsageFlags bufferUsage, vma::Allocator allocator, vma::MemoryUsage memoryUsage );
 };
 
 struct AllocatedImage
@@ -33,6 +35,13 @@ struct MeshPushConstant         // 16 bytes + 64 bytes = 80 bytes (max size yg d
     glm::mat4 renderMatrix;    // 16 floats = 64 bytes
 };
 
+struct GpuCameraData
+{
+    glm::mat4 view;
+    glm::mat4 projection;
+    glm::mat4 viewproj;
+};
+
 struct FrameData
 {
     vk::Semaphore presentSemaphore;
@@ -41,4 +50,14 @@ struct FrameData
 
     vk::CommandPool commandPool;
     vk::CommandBuffer mainCommandBuffer;
+
+    AllocatedBuffer cameraBuffer;
+    vk::DescriptorSet globalDescriptor;
 };
+
+/*
+ * MeshPushConstant
+ * GpuCameraData
+ * 
+ * are must have the same byte size as on the shader file side
+ */

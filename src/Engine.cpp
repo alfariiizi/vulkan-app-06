@@ -432,7 +432,7 @@ void Engine::draw( vk::CommandBuffer cmd )
     
     // _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
 
-    _sceneManag.drawObject( cmd );
+    _sceneManag.drawObject( cmd, getCurrentFrame(), _allocator );
 }
 
 void Engine::record() 
@@ -558,6 +558,7 @@ void Engine::uploadMesh(Mesh& mesh)
 void Engine::createObjectToRender() 
 {
     createMeshes();
+    initDescriptors();  // the descriptor set layout member variable is used when creating material
     createMaterials();
     initRenderObject();
 }
@@ -650,6 +651,7 @@ void Engine::defaultMaterial()
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo {};
     pipelineLayoutInfo.setPushConstantRanges( pushConstant );
+    pipelineLayoutInfo.setSetLayouts( _globalSetLayout );   // descriptor set layout must be initialized first at the order of initVulkan
     try
     {
         layout = _device->createPipelineLayout( pipelineLayoutInfo );
@@ -669,7 +671,7 @@ void Engine::defaultMaterial()
      * @brief init default pipeline builder
      */
     GraphicsPipeline builder;
-    builder.init( _device.get(), "shaders/tri_mesh_vertex.spv", "shaders/frag.spv", _swapchainExtent );
+    builder.init( _device.get(), "shaders/vertex_shader.spv", "shaders/frag.spv", _swapchainExtent );
 
     /**
      * @brief Vertex Input state info
@@ -688,6 +690,100 @@ void Engine::defaultMaterial()
     pipeline = builder.m_graphicsPipeline;
 
     _sceneManag.createMaterial( pipeline, layout, "defaultMaterial" );
+}
+
+void Engine::initDescriptors() 
+{
+    /**
+     * @brief Create Descriptor pool
+     */
+    uint32_t maxSets = 10;
+    std::vector<vk::DescriptorPoolSize> sizes;
+
+    // this Descriptor Pool will be hold 10 Uniform Buffer
+    vk::DescriptorPoolSize uniformbuffer {};
+    uniformbuffer.setType( vk::DescriptorType::eUniformBuffer );
+    uniformbuffer.setDescriptorCount( 10 );
+    sizes.emplace_back( uniformbuffer );
+
+    vk::DescriptorPoolCreateInfo descriptorPoolInfo {};
+    descriptorPoolInfo.setMaxSets( maxSets ); // the maximum descriptor sets that can be store to the pool
+    descriptorPoolInfo.setPoolSizes( sizes ); // the poolsize struct
+    try
+    {
+        _descriptorPool = _device->createDescriptorPool( descriptorPoolInfo );
+    } ENGINE_CATCH
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), dp = _descriptorPool](){
+            d.destroyDescriptorPool( dp );
+        }
+    );
+
+
+    /**
+     * @brief Create Descriptor set layout
+     */
+    vk::DescriptorSetLayoutBinding camBufferBinding {};
+    camBufferBinding.setBinding( 0 );
+    camBufferBinding.setDescriptorType( vk::DescriptorType::eUniformBuffer );
+    camBufferBinding.setDescriptorCount( 1 );
+    camBufferBinding.setStageFlags( vk::ShaderStageFlagBits::eVertex );
+
+    vk::DescriptorSetLayoutCreateInfo setLayoutInfo {};
+    setLayoutInfo.setBindings( camBufferBinding );
+
+    try
+    {
+        _globalSetLayout = _device->createDescriptorSetLayout( setLayoutInfo );
+    } ENGINE_CATCH
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), sl = _globalSetLayout](){
+            d.destroyDescriptorSetLayout( sl );
+        }
+    );
+
+
+    /**
+     * @brief Create The Buffer for every frame
+     */
+    for( auto& frame : _frames )
+    {
+        frame.cameraBuffer = AllocatedBuffer::createBuffer( sizeof(GpuCameraData), vk::BufferUsageFlagBits::eUniformBuffer, _allocator, vma::MemoryUsage::eCpuToGpu );
+        _mainDeletionQueue.pushFunction(
+            [ a = _allocator, b = frame.cameraBuffer ](){
+                a.destroyBuffer( b.buffer, b.allocation );
+            }
+        );
+
+        vk::DescriptorSetAllocateInfo setAllocInfo {};
+        setAllocInfo.setDescriptorPool( _descriptorPool );
+        setAllocInfo.setSetLayouts( _globalSetLayout );
+        setAllocInfo.setDescriptorSetCount( 1 );    // just 1 descriptor set
+
+        // "front()" because we just have a single descriptor set that we want to allocate
+        try
+        {
+            frame.globalDescriptor = _device->allocateDescriptorSets( setAllocInfo ).front();
+        } ENGINE_CATCH
+
+
+        /**
+         * @brief Information about the buffer that we want to point at in the descriptor
+         */
+        vk::DescriptorBufferInfo descBuffInfo {};
+        descBuffInfo.setBuffer( frame.cameraBuffer.buffer );
+        descBuffInfo.setOffset( 0 );    // at offset 0
+        descBuffInfo.setRange( sizeof( GpuCameraData ) ); // this struct is used for uniform buffer (in vertex)
+
+        vk::WriteDescriptorSet setWrite {};
+        setWrite.setDstSet( frame.globalDescriptor );
+        setWrite.setDstBinding( 0 );    // write at binding 0
+        setWrite.setDescriptorCount( 1 );   // just 1 descriptor
+        setWrite.setDescriptorType( vk::DescriptorType::eUniformBuffer );
+        setWrite.setBufferInfo( descBuffInfo );
+
+        _device->updateDescriptorSets( setWrite, nullptr );
+    }
 }
 
 FrameData& Engine::getCurrentFrame() 
