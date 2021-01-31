@@ -306,3 +306,26 @@ vk::ImageViewCreateInfo init::image::initImageViewInfo( vk::Format format, vk::I
 
     return imageViewInfo;
 }
+
+vk::DescriptorSetLayoutBinding init::dsc::initDescriptorSetLayoutBinding( uint32_t binding, vk::DescriptorType type, vk::ShaderStageFlags stageFlag )
+{
+    vk::DescriptorSetLayoutBinding descSetLayoutBinding {};
+    descSetLayoutBinding.setBinding( binding );
+    descSetLayoutBinding.setDescriptorType( type );
+    descSetLayoutBinding.setDescriptorCount( 1 );
+    descSetLayoutBinding.setStageFlags( stageFlag );
+
+    return descSetLayoutBinding;
+}
+
+vk::WriteDescriptorSet init::dsc::initWriteDescriptorSetToBuffer( uint32_t binding, vk::DescriptorSet dstSet, vk::DescriptorType type, vk::DescriptorBufferInfo dscBuffInfo )
+{
+    vk::WriteDescriptorSet setWrite {};
+    setWrite.setBufferInfo( dscBuffInfo );
+    setWrite.setDstSet( dstSet );
+    setWrite.setDstBinding( binding );    // write at binding 0
+    setWrite.setDescriptorCount( 1 );   // just 1 descriptor
+    setWrite.setDescriptorType( type );
+
+    return setWrite;
+}

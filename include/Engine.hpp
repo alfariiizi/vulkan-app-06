@@ -61,25 +61,26 @@ private:
 
 private:
     void defaultMaterial();
+    void colorMaterial();
 
 private:
     void initDescriptors();
 
 private:
+    FrameData& getCurrentFrame();
+    size_t padUniformBufferSize( size_t originalSize );
+
+private:
     vk::DescriptorSetLayout _globalSetLayout;
+    vk::DescriptorSetLayout _objectSetLayout;
     vk::DescriptorPool _descriptorPool;
+    SceneParameter _sceneParameter;
 
 private:
     SceneManagement _sceneManag;
 
 private:
-    std::vector<RenderObject> _renderables;
-    std::unordered_map<std::string, Material> _materials;
-    std::unordered_map<std::string, Mesh> _meshes;
-
-private:
     std::array<FrameData, FRAME_OVERLAP> _frames;
-    FrameData& getCurrentFrame();
 
 public:
     static constexpr unsigned int ScreenWidth       = 800U;
@@ -94,6 +95,7 @@ private:
     VkDebugUtilsMessengerEXT    _debugUtilsMessenger;
     DeletionQueue               _mainDeletionQueue;
     vk::PhysicalDevice          _physicalDevice;
+    vk::PhysicalDeviceProperties _physicalDeviceProperties;
     vk::UniqueDevice            _device;
     vk::Queue _graphicsQueue;
     vk::Queue _presentQueue;

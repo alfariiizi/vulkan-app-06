@@ -38,30 +38,8 @@ Mesh* SceneManagement::getPMehs( const std::string& name )
     return &it->second;
 }
 
-void SceneManagement::drawObject( vk::CommandBuffer cmd, FrameData currentFrame, vma::Allocator allocator )
+void SceneManagement::drawObject( vk::CommandBuffer cmd, FrameData currentFrame, const uint32_t descOffset )
 {
-    // camera view
-    glm::vec3 camPos = { 0.0f, -6.0f, -10.0f };
-    glm::mat4 view = glm::translate( glm::mat4{ 1.0f }, camPos );
-    glm::mat4 projection = glm::perspective( glm::radians(70.0f), 1700.0f/ 900.0f, 0.1f, 200.0f );
-    projection[1][1] *= -1;
-
-    /**
-     * @brief Filling the GPU Camera structure
-     */
-    GpuCameraData camData;
-    camData.projection = projection;
-    camData.view = view;
-    camData.viewproj = projection * view;
-
-    /**
-     * @brief Copy the GPU Camera structure to the buffer
-     */
-    void* data = allocator.mapMemory( currentFrame.cameraBuffer.allocation );
-    memcpy( data, &camData, sizeof(GpuCameraData) );
-    allocator.unmapMemory( currentFrame.cameraBuffer.allocation );
-
-
     Mesh* lastMesh = nullptr;
     Material* pLastMaterial = nullptr;
 
@@ -71,11 +49,19 @@ void SceneManagement::drawObject( vk::CommandBuffer cmd, FrameData currentFrame,
         if( object.pMaterial != pLastMaterial )
         {
             cmd.bindPipeline( vk::PipelineBindPoint::eGraphics, object.pMaterial->pipeline );
-            cmd.bindDescriptorSets( 
-                vk::PipelineBindPoint::eGraphics, object.pMaterial->layout, 
-                0,                                  // first set
-                currentFrame.globalDescriptor,      // descriptor set (this could be an array)
-                nullptr                             // dynamic offset
+
+            // cmd.bindDescriptorSets( 
+            //     vk::PipelineBindPoint::eGraphics, object.pMaterial->layout, 
+            //     0,                                  // first set
+            //     currentFrame.globalDescriptorSet,      // descriptor set (this could be an array)
+            //     nullptr                             // dynamic offset
+            // );
+            cmd.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute,
+                object.pMaterial->layout,
+                0,
+                currentFrame.globalDescriptorSet,
+                descOffset
             );
         }
 

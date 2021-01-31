@@ -19,6 +19,9 @@
     }
 #endif
 
+#define SIN( X ) sinf( glm::radians( X ) )
+#define COS( X ) cosf( glm::radians( X ) )
+
 Engine::Engine() 
 {
     run();
@@ -107,6 +110,10 @@ void Engine::createMainVulkanComponent()
      * @brief Physical Device
      */
     _physicalDevice = init::pickPhysicalDevice( _instance.get(), _surface );
+    _physicalDeviceProperties = _physicalDevice.getProperties();
+    std::cout << "The GPU has a minimum buffer allignment of : " << _physicalDeviceProperties.limits.minUniformBufferOffsetAlignment << "\n";
+    std::cout << "Device name : " << _physicalDeviceProperties.deviceName << "\n"
+            << "Driver version : " << _physicalDeviceProperties.driverVersion << "\n\n\n";
 
     /**
      * @brief Device and The Queues
@@ -377,62 +384,177 @@ void Engine::beginFrame()
 
 void Engine::draw( vk::CommandBuffer cmd ) 
 {
-    // /**
-    //  * @brief Bind the graphics pipeline
-    //  */
-    // // _mainCommandBuffer->bindPipeline( 
-    // //     vk::PipelineBindPoint::eGraphics,       // pipeline bind point (in the future, it could be compute pipeline)
-    // //     _graphicsPipeline                       // the pipeline
-    // // );
-    // // _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _graphicsTriangleMeshPipeline );
-    // _mainCommandBuffer->bindPipeline( vk::PipelineBindPoint::eGraphics, _monkeyGraphicsPipeline );
+    /**
+     * @brief draw() Week Point
+     * This draw function has weak point, i.e. this function just support for render with normal/dynamic uniform buffer.
+     * So, the "defaultMateril" won't work if you decide to use defaultMaterial to one of your renderable object
+     */
 
-    // vk::DeviceSize offset = 0;
-    // // _mainCommandBuffer->bindVertexBuffers( 0, _triangleMesh.vertexBuffer.buffer, offset );
-    // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh.vertexBuffer.buffer, offset );
-    // // _mainCommandBuffer->bindVertexBuffers( 0, _monkeyMesh->getMesh().vertexBuffer.buffer, offset );
+    /**
+     * @brief Camera (Normal Uniform Buffer)
+     */
+    {
+        // camera view
+        glm::vec3 camPos = { 0.0f, -6.0f, -10.0f };
+        glm::mat4 view = glm::translate( glm::mat4{ 1.0f }, camPos );
+        glm::mat4 projection = glm::perspective( glm::radians(70.0f), 1700.0f/ 900.0f, 0.1f, 200.0f );
+        projection[1][1] *= -1;
+        // filling the GPU camera data
+        GpuCameraData camData;
+        camData.projection = projection;
+        camData.view = view;
+        camData.viewproj = projection * view;
+        // mapping memory
+        void* data = _allocator.mapMemory( getCurrentFrame().cameraBuffer.allocation );
+        memcpy( data, &camData, sizeof(GpuCameraData) );
+        _allocator.unmapMemory( getCurrentFrame().cameraBuffer.allocation );
+    }
 
+    int frameIndex = _frameNumber % FRAME_OVERLAP;
+    /**
+     * @brief Scene (Dyanamic Uniform Buffer)
+     */
+    {
+        float framed = glm::radians( static_cast<float>( _frameNumber ) );
+        _sceneParameter.sceneParameter.ambientColor = { sinf( framed ), 0, cosf( framed ), 1 };
+        // mapping memory
+        char* sceneData;
+        auto result = _allocator.mapMemory( _sceneParameter.allocationBuffer.allocation, reinterpret_cast<void**>(&sceneData) );
+        if( result != vk::Result::eSuccess )
+            throw std::runtime_error( "Failed to mapping the Scene Parameter Buffer" );
+        sceneData += padUniformBufferSize( sizeof(GpuSceneParameterData) ) * frameIndex;
+        memcpy( sceneData, &_sceneParameter.sceneParameter, sizeof(GpuSceneParameterData) );
+        _allocator.unmapMemory( _sceneParameter.allocationBuffer.allocation );
+    }
 
-    // /**
-    //  * @brief Math's thing hahaha
-    //  */
-    // glm::vec3 camPos = { 0.0f, 0.0f, -2.0f };
-    // glm::mat4 view = glm::translate( glm::mat4(1.0f), camPos );
-    // // camera projection
-    // glm::mat4 projection = glm::perspective( glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f );
-    // projection[1][1] *= -1.0f;
-    // // model rotation
-    // glm::mat4 model = glm::rotate( glm::mat4(1.0f), glm::radians( _frameNumber * 0.4f ), glm::vec3( 0.0f, 1.0f, 0.0f ) );
+    const auto currentFrame = getCurrentFrame();
+    /**
+     * @brief Object (Storage Buffer)
+     * This technic is kinda similar to memcpy().
+     * It will maybe more complex operation that needed if we use memcpy(), 
+     * because we glm::mat4 struct is store on the different class (one stores in GpuObjectData, and another stores in RenderObject).
+     * But, both classes are have the same struct, i.e. glm::mat4 (of course wkwk).
+     * For that reason, we manually copy every glm::mat4 for one class that used for push constant, to other class that used for SSBO.
+     * 
+     * Why is it possible ?
+     * Well, maybe it because we specified "std140" at shader (specifically, vertex shader).
+     * So, first, it makes the data on the memory are laid out like it can access through the [] operator.
+     * And, second, it makes the casting from "void*" to "GpuObjectData*" is perfect fit,
+     * because we specified the range of the storage buffer (like 've explained in the cmd.draw() section).
+     * 
+     * Other possibilites, that, we can use pointer aritmathics to iterate through all the object that we'll be copied
+     * if you not want to use [] operator.
+     * 
+     * There are just just happen error with scenario like this:
+     * reinterpret_cast<GpuObjectData*>( data ) --> casting from void data;
+     * reinterpret_cast<GpuObjectData*>( &data ) --> casting from void *data;
+     * The first one will give the address of pointer itself.
+     * And the second one will give the address that pointer is pointing to.
+     * So, be carefull !.
+     */
+    {
+        void* data = _allocator.mapMemory( currentFrame.objectBuffer.allocation );
+        GpuObjectData* ssbo = reinterpret_cast<GpuObjectData*>( data );
+        for( int i = 0; i < _sceneManag.renderable.size(); ++i )
+        {
+            ssbo[i].modelMatrix = _sceneManag.renderable[i].transformMatrix;
+        }
+        _allocator.unmapMemory( currentFrame.objectBuffer.allocation );
+    }
 
-    // // calculate final matrix mesh
-    // glm::mat4 matrixMesh = projection * view * model;
-    
-    // MeshPushConstant meshPushConstant;
-    // meshPushConstant.renderMatrix = matrixMesh;
+    /**
+     * @brief Draw the object
+     */
+    {
+        Mesh* lastMesh = nullptr;
+        Material* pLastMaterial = nullptr;
 
-    // // _mainCommandBuffer->pushConstants<MeshPushConstant>( _meshPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
-    // _mainCommandBuffer->pushConstants<MeshPushConstant>( _monkeyPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, meshPushConstant );
+        uint32_t i = 0U;
+        for( auto& object : _sceneManag.renderable )
+        {
+            /**
+             * @brief Material's things
+             */
+            if( object.pMaterial != pLastMaterial ) // just bind if the materials is valid
+            {
+                cmd.bindPipeline( vk::PipelineBindPoint::eGraphics, object.pMaterial->pipeline );
 
-    // /**
-    //  * @brief Drawing
-    //  */
-    // // _mainCommandBuffer->draw(
-    // //     3,      // vertex count ( triangle has 3 vertices, right )
-    // //     1,      // instance count ( it's not the instance handle, but how many object will be draw, I'll draw 1 triangle, so just 1 instance )
-    // //     0,      // first vertex ( I'll be draw the vertex from index 0 )
-    // //     0       // first instance ( I'll be draw the instance from index 0 )
-    // // );
+                // this bind descriptor set is just for dynamic buffer. Normal buffer no need this bind.
+                // It's makes sense, because the normal buffer just has static offset.
+                // In the other hand, the dynamic uniform buffer has dynamic offset.
+                // So, if you just want to make static offset, then just use the normal uniform buffer.
+                // Normal uniform buffer "should be" faster than the dynamic one, but I'm not sure, 
+                // I just predict it can be like the static memory and dynamic memory.
+                // And, the dynamic uniform buffer need to be bind every time, 
+                // so maybe that gonna make dynamic buffer more slower (?)
+                cmd.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,           // pipeline bind point
+                    object.pMaterial->layout,                   // pipeline layout
+                    0,                                          // first descriptor set on the array of descriptor set
+                    currentFrame.globalDescriptorSet,           // the descriptor set (this could be an array, that's why there are "first descriptor set" right above this paramter)
+                    frameIndex * padUniformBufferSize(sizeof( GpuSceneParameterData ))  // dynamic offset
+                );
+                cmd.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,
+                    object.pMaterial->layout,
+                    1,
+                    currentFrame.objectDescriptorSet,
+                    nullptr
+                );
+            }
 
-    // // _mainCommandBuffer->draw(
-    // //     _triangleMesh.vertices.size(),
-    // //     1,
-    // //     0,
-    // //     0
-    // // );
-    
-    // _mainCommandBuffer->draw( _monkeyMesh.vertices.size(), 1, 0, 0 );
+            /**
+             * @brief Push Contant's things
+             * Push constant use pipeline layout to allocate the space, and pipeline layout is about "Material".
+             * But, "Material" is about how the object will look, not about how object is represented.
+             * And it's not about the vertices that make up the "Mesh".
+             * So, in the RenderObject class, there are member variable called "transformMatrix".
+             * That member variable is used for representing the Mesh object to the 3D world.
+             * So, it's neither "Material" nor "Mesh", it's transformMatrix.
+             * That's why I make about this separate section "Push Constant's things"
+             */
+            MeshPushConstant pushconstant;
+            // final render matrix that will be calculated on the cpu
+            // pushconstant.renderMatrix = projection * view * model;
+            pushconstant.renderMatrix = object.transformMatrix;
+            vk::DeviceSize offsetMaterial = 0;
+            cmd.pushConstants<MeshPushConstant>( object.pMaterial->layout, vk::ShaderStageFlagBits::eVertex, offsetMaterial, pushconstant );
 
-    _sceneManag.drawObject( cmd, getCurrentFrame(), _allocator );
+            /**
+             * @brief Mesh's things
+             */
+            if( object.pMesh != lastMesh ) // just bind if the mesh is valid
+            {
+                vk::DeviceSize offsetMesh = 0;
+                cmd.bindVertexBuffers( 0, object.pMesh->vertexBuffer.buffer, offsetMesh );
+            }
+
+            /**
+             * @brief Finally, Drawing Current RenderObject to the 3D world
+             * We want draw 1 instance ( 1 object ).
+             * When initializing the buffer info in initDescriptor, 
+             * we set the range is the size of the struct itself and the offset is 0.
+             * From 0 to the offset is 1 object, right ?!.
+             * Ok, let say the size of the struct is 16 byte, 
+             * and there are 100 objects that we've inputed, then the total size is 1600 bytes.
+             * The range byte of the first object is from byte 0 until byte 16, 
+             * and the last object is from byte 1584 until byte 1600.
+             * That object is called instance.
+             * And then in the vertex shader or just shader, we do "gl_BaseInstance", 
+             * that means we accessing those instance by specifing "first instance" parameter below
+             * 
+             * Note that this is not normal/dynamic uniform buffer, so we do not worrying about the minimum padding's things.
+             */
+            cmd.draw( 
+                object.pMesh->vertices.size(),      // vertex count
+                1,                                  // instance count
+                0,                                  // first vertex
+                i                                   // first instance
+            );
+
+            ++i;
+        }
+    }
 }
 
 void Engine::record() 
@@ -565,19 +687,29 @@ void Engine::createObjectToRender()
 
 void Engine::createMaterials() 
 {
-    defaultMaterial();
+    // defaultMaterial();
+    colorMaterial();
 }
 
 void Engine::initRenderObject() 
 {
-    RenderObject monkey;
-    monkey.pMesh = _sceneManag.getPMehs( "monkey" );
-    assert( monkey.pMesh != nullptr );
-    monkey.pMaterial = _sceneManag.getPMaterial( "defaultMaterial" );
-    assert( monkey.pMaterial != nullptr );
-    monkey.transformMatrix = glm::mat4( 1.0f );
-    _sceneManag.pushRenderableObject( monkey );
+    /**
+     * @brief Monkey object
+     */
+    {
+        RenderObject monkey;
+        monkey.pMesh = _sceneManag.getPMehs( "monkey" );
+        assert( monkey.pMesh != nullptr );
+        monkey.pMaterial = _sceneManag.getPMaterial( "colorMaterial" );
+        assert( monkey.pMaterial != nullptr );
+        monkey.transformMatrix = glm::mat4( 1.0f );
+        _sceneManag.pushRenderableObject( monkey );
+    }
 
+    /**
+     * @brief Triangles object
+     * (-20 until <= 20, is 21 step. 21 for x step and for y step, so maybe 21 * 21 = 441 triangle objects)
+     */
     for( int x = -20; x <= 20; ++x )
     {
         for( int y = -20; y <= 20; ++y )
@@ -585,7 +717,7 @@ void Engine::initRenderObject()
             RenderObject triangle;
             triangle.pMesh = _sceneManag.getPMehs( "triangle" );
             assert( triangle.pMesh != nullptr );
-            triangle.pMaterial = _sceneManag.getPMaterial( "defaultMaterial" );
+            triangle.pMaterial = _sceneManag.getPMaterial( "colorMaterial" );
             assert( triangle.pMaterial != nullptr );
 
             glm::mat4 translation = glm::translate( glm::mat4{ 1.0f }, glm::vec3{ x, 0, y } );
@@ -692,101 +824,326 @@ void Engine::defaultMaterial()
     _sceneManag.createMaterial( pipeline, layout, "defaultMaterial" );
 }
 
+void Engine::colorMaterial() 
+{
+    vk::PipelineLayout layout;
+    vk::Pipeline pipeline;
+
+    /**
+     * @brief Pipeline layout info
+     */
+    vk::PushConstantRange pushConstant {};
+    pushConstant.setOffset( 0 );
+    pushConstant.setSize( sizeof( MeshPushConstant ) );
+    pushConstant.setStageFlags( vk::ShaderStageFlagBits::eVertex );
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo {};
+    pipelineLayoutInfo.setPushConstantRanges( pushConstant );
+    std::vector<vk::DescriptorSetLayout> descriptorSetLayouts = { _globalSetLayout, _objectSetLayout };
+    pipelineLayoutInfo.setSetLayouts( descriptorSetLayouts );   // descriptor set layout must be initialized first at the order of initVulkan
+    try
+    {
+        layout = _device->createPipelineLayout( pipelineLayoutInfo );
+    } ENGINE_CATCH
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), pl = layout](){
+            d.destroyPipelineLayout( pl );
+        }
+    );
+
+    /**
+     * @brief Depth Stencil Info
+     */
+    auto depthStencilInfo = GraphicsPipeline::createDepthStencilInfo( true, true, vk::CompareOp::eLessOrEqual );
+
+    /**
+     * @brief init default pipeline builder
+     */
+    GraphicsPipeline builder;
+    builder.init( _device.get(), "shaders/vertex_shader.spv", "shaders/fragment_shader.spv", _swapchainExtent );
+
+    /**
+     * @brief Vertex Input state info
+     */
+    builder.m_vertexInputDesc = Vertex::getVertexInputDescription();
+    builder.m_vertexInputStateInfo.setVertexBindingDescriptions( builder.m_vertexInputDesc.bindings );
+    builder.m_vertexInputStateInfo.setVertexAttributeDescriptions( builder.m_vertexInputDesc.attributs );
+
+    /**
+     * @brief initialize the depth stencil
+     */
+    builder.m_useDepthStencil = true;
+    builder.m_depthStencilStateInfo = depthStencilInfo;
+
+    builder.createGraphicsPipeline( _renderPass, layout, _mainDeletionQueue );
+    pipeline = builder.m_graphicsPipeline;
+
+    _sceneManag.createMaterial( pipeline, layout, "colorMaterial" );
+}
+
 void Engine::initDescriptors() 
 {
     /**
      * @brief Create Descriptor pool
      */
-    uint32_t maxSets = 10;
-    std::vector<vk::DescriptorPoolSize> sizes;
-
-    // this Descriptor Pool will be hold 10 Uniform Buffer
-    vk::DescriptorPoolSize uniformbuffer {};
-    uniformbuffer.setType( vk::DescriptorType::eUniformBuffer );
-    uniformbuffer.setDescriptorCount( 10 );
-    sizes.emplace_back( uniformbuffer );
-
-    vk::DescriptorPoolCreateInfo descriptorPoolInfo {};
-    descriptorPoolInfo.setMaxSets( maxSets ); // the maximum descriptor sets that can be store to the pool
-    descriptorPoolInfo.setPoolSizes( sizes ); // the poolsize struct
-    try
     {
-        _descriptorPool = _device->createDescriptorPool( descriptorPoolInfo );
-    } ENGINE_CATCH
-    _mainDeletionQueue.pushFunction(
-        [d = _device.get(), dp = _descriptorPool](){
-            d.destroyDescriptorPool( dp );
-        }
-    );
+        uint32_t maxSets = 10;
+        std::vector<vk::DescriptorPoolSize> sizes;
 
+        // this Descriptor Pool will be hold 10 Uniform Buffer.
+        vk::DescriptorPoolSize uniformbuffer {};
+        uniformbuffer.setType( vk::DescriptorType::eUniformBuffer );
+        uniformbuffer.setDescriptorCount( 10 );
+        sizes.emplace_back( uniformbuffer );
+
+        // the Desc Pool will be hold 10 Dynamic Uniform Buffer.
+        vk::DescriptorPoolSize dynamicUniformBuffer {};
+        dynamicUniformBuffer.setType( vk::DescriptorType::eUniformBufferDynamic );
+        dynamicUniformBuffer.setDescriptorCount( 10 );
+        sizes.emplace_back( dynamicUniformBuffer );
+
+        // the pool will be hold 10 Storage Buffer.
+        vk::DescriptorPoolSize storageBuffer {};
+        storageBuffer.setType( vk::DescriptorType::eStorageBuffer );
+        storageBuffer.setDescriptorCount( 10 );
+        sizes.emplace_back( storageBuffer );
+
+        vk::DescriptorPoolCreateInfo descriptorPoolInfo {};
+        descriptorPoolInfo.setMaxSets( maxSets ); // the maximum descriptor sets that can be store to the pool
+        descriptorPoolInfo.setPoolSizes( sizes ); // the poolsize struct
+        try
+        {
+            _descriptorPool = _device->createDescriptorPool( descriptorPoolInfo );
+        } ENGINE_CATCH
+        _mainDeletionQueue.pushFunction(
+            [d = _device.get(), dp = _descriptorPool](){
+                d.destroyDescriptorPool( dp );
+            }
+        );
+    }
 
     /**
      * @brief Create Descriptor set layout
      */
-    vk::DescriptorSetLayoutBinding camBufferBinding {};
-    camBufferBinding.setBinding( 0 );
-    camBufferBinding.setDescriptorType( vk::DescriptorType::eUniformBuffer );
-    camBufferBinding.setDescriptorCount( 1 );
-    camBufferBinding.setStageFlags( vk::ShaderStageFlagBits::eVertex );
-
-    vk::DescriptorSetLayoutCreateInfo setLayoutInfo {};
-    setLayoutInfo.setBindings( camBufferBinding );
-
-    try
     {
-        _globalSetLayout = _device->createDescriptorSetLayout( setLayoutInfo );
-    } ENGINE_CATCH
-    _mainDeletionQueue.pushFunction(
-        [d = _device.get(), sl = _globalSetLayout](){
-            d.destroyDescriptorSetLayout( sl );
-        }
-    );
+        {
+            // Camera binding
+            vk::DescriptorSetLayoutBinding camBinding = init::dsc::initDescriptorSetLayoutBinding(
+                0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex
+            );
+            // Scene binding
+            vk::DescriptorSetLayoutBinding sceneBinding = init::dsc::initDescriptorSetLayoutBinding(
+                1, vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            );
 
+            // just create 1 descriptor layout, because we just need 1 descriptor set
+            vk::DescriptorSetLayoutCreateInfo setLayoutInfo {};
+            std::vector<vk::DescriptorSetLayoutBinding> setLayoutBinding = { camBinding, sceneBinding };
+            setLayoutInfo.setBindings( std::array<vk::DescriptorSetLayoutBinding, 2>{ camBinding, sceneBinding } );
+
+            try
+            {
+                _globalSetLayout = _device->createDescriptorSetLayout( setLayoutInfo );
+            } ENGINE_CATCH
+            _mainDeletionQueue.pushFunction(
+                [d = _device.get(), sl = _globalSetLayout](){
+                    d.destroyDescriptorSetLayout( sl );
+                }
+            );
+        }
+        {
+            auto objectBinding = init::dsc::initDescriptorSetLayoutBinding(
+                0,                                  // binding
+                vk::DescriptorType::eStorageBuffer, // descriptor type
+                vk::ShaderStageFlagBits::eVertex    // shader stage
+            );
+            vk::DescriptorSetLayoutCreateInfo setLayoutInfo {};
+            setLayoutInfo.setBindings( objectBinding );
+            try
+            {
+                _objectSetLayout = _device->createDescriptorSetLayout( setLayoutInfo );
+            } ENGINE_CATCH
+            _mainDeletionQueue.pushFunction(
+                [d = _device.get(), sl = _objectSetLayout](){
+                    d.destroyDescriptorSetLayout( sl );
+                }
+            );
+        }
+    }
 
     /**
-     * @brief Create The Buffer for every frame
+     * @brief Create Scene Parameter Buffer
      */
-    for( auto& frame : _frames )
+    std::cout << "Original Size: " << sizeof(GpuSceneParameterData) << "\n";
+    std::cout << "Padding Size: " << padUniformBufferSize( sizeof(GpuSceneParameterData) ) << '\n';
+    std::cout << "Min limit uniform size: " << _physicalDeviceProperties.limits.minUniformBufferOffsetAlignment << "\n\n";
     {
-        frame.cameraBuffer = AllocatedBuffer::createBuffer( sizeof(GpuCameraData), vk::BufferUsageFlagBits::eUniformBuffer, _allocator, vma::MemoryUsage::eCpuToGpu );
+        const uint32_t sceneParameterBufferSize = FRAME_OVERLAP * padUniformBufferSize( sizeof(GpuSceneParameterData) );
+        _sceneParameter.allocationBuffer = AllocatedBuffer::createBuffer( 
+            sceneParameterBufferSize,
+            vk::BufferUsageFlagBits::eUniformBuffer, 
+            _allocator,
+            vma::MemoryUsage::eCpuToGpu
+        );
         _mainDeletionQueue.pushFunction(
-            [ a = _allocator, b = frame.cameraBuffer ](){
+            [ a = _allocator, b = _sceneParameter.allocationBuffer ](){
                 a.destroyBuffer( b.buffer, b.allocation );
             }
         );
+    }
 
-        vk::DescriptorSetAllocateInfo setAllocInfo {};
-        setAllocInfo.setDescriptorPool( _descriptorPool );
-        setAllocInfo.setSetLayouts( _globalSetLayout );
-        setAllocInfo.setDescriptorSetCount( 1 );    // just 1 descriptor set
-
-        // "front()" because we just have a single descriptor set that we want to allocate
-        try
+    for( int i = 0; i < FRAME_OVERLAP; ++i )
+    {
+        /**
+         * @brief Creating Buffer for each frame
+         * 
+         */
+        const int maxObjectCount = 10000;
         {
-            frame.globalDescriptor = _device->allocateDescriptorSets( setAllocInfo ).front();
-        } ENGINE_CATCH
-
+            /**
+             * @brief Camera Buffer
+             * buffer type --> Uniform Buffer
+             */
+            {
+                _frames[i].cameraBuffer = AllocatedBuffer::createBuffer( 
+                    sizeof(GpuCameraData),
+                    vk::BufferUsageFlagBits::eUniformBuffer,
+                    _allocator, vma::MemoryUsage::eCpuToGpu
+                );
+                _mainDeletionQueue.pushFunction(
+                    [ a = _allocator, b = _frames[i].cameraBuffer ](){
+                        a.destroyBuffer( b.buffer, b.allocation );
+                    }
+                );
+            }
+            /**
+             * @brief Object Buffer
+             * buffer type --> Storage Buffer
+             * Note: Storage buffer is kinda like std::vector, it's can store a lot data to it, 
+             *       but of course the price is it's slower than the normal/dynamic uniform buffer
+             */
+            {
+                _frames[i].objectBuffer = AllocatedBuffer::createBuffer( 
+                    sizeof(GpuObjectData) * maxObjectCount,
+                    vk::BufferUsageFlagBits::eStorageBuffer,
+                    _allocator,
+                    vma::MemoryUsage::eCpuToGpu
+                );
+                _mainDeletionQueue.pushFunction(
+                    [ a = _allocator, b = _frames[i].objectBuffer ](){
+                        a.destroyBuffer( b.buffer, b.allocation );
+                    }
+                );
+            }
+        }
 
         /**
-         * @brief Information about the buffer that we want to point at in the descriptor
+         * @brief Allocate Descriptor Set for each frame
          */
-        vk::DescriptorBufferInfo descBuffInfo {};
-        descBuffInfo.setBuffer( frame.cameraBuffer.buffer );
-        descBuffInfo.setOffset( 0 );    // at offset 0
-        descBuffInfo.setRange( sizeof( GpuCameraData ) ); // this struct is used for uniform buffer (in vertex)
+        {
+            {
+                vk::DescriptorSetAllocateInfo setAllocInfo {};
+                setAllocInfo.setDescriptorPool( _descriptorPool );
+                setAllocInfo.setSetLayouts( _globalSetLayout );
+                setAllocInfo.setDescriptorSetCount( 1 );    // just 1 descriptor set
+                // "front()" because we just have a single descriptor set that we want to allocate
+                // auto tmp = _device->allocateDescriptorSets( setAllocInfo );
+                try
+                {
+                    _frames[i].globalDescriptorSet = _device->allocateDescriptorSets( setAllocInfo )[0];
+                } ENGINE_CATCH
+            }
+            {
+                vk::DescriptorSetAllocateInfo setAllocInfo {};
+                setAllocInfo.setDescriptorPool( _descriptorPool );
+                setAllocInfo.setSetLayouts( _objectSetLayout );
+                setAllocInfo.setDescriptorSetCount( 1 );
+                try
+                {
+                    _frames[i].objectDescriptorSet = _device->allocateDescriptorSets( setAllocInfo ).front();
+                } ENGINE_CATCH
+            }
+        }
 
-        vk::WriteDescriptorSet setWrite {};
-        setWrite.setDstSet( frame.globalDescriptor );
-        setWrite.setDstBinding( 0 );    // write at binding 0
-        setWrite.setDescriptorCount( 1 );   // just 1 descriptor
-        setWrite.setDescriptorType( vk::DescriptorType::eUniformBuffer );
-        setWrite.setBufferInfo( descBuffInfo );
+        {
+            /**
+             * @brief Information about the buffer that we want to point at in the descriptor
+             */
+            std::vector<vk::WriteDescriptorSet> setWrite;
+            vk::DeviceSize offset = vk::DeviceSize{ 0U };
+            /**
+             * @brief Write each descriptor to each buffer info
+             */
+            vk::DescriptorBufferInfo camBuffInfo {};
+            vk::DescriptorBufferInfo sceneBuffInfo {};
+            vk::DescriptorBufferInfo objectBuffInfo {};
+            vk::WriteDescriptorSet camDescSetBuff {};
+            vk::WriteDescriptorSet sceneDescSetBuff {};
+            vk::WriteDescriptorSet objectDescSetBuff {};
+        {
+            {
+                    camBuffInfo.setBuffer( _frames[i].cameraBuffer.buffer );
+                    camBuffInfo.setOffset( offset );    // at offset 0
+                    camBuffInfo.setRange( sizeof( GpuCameraData ) ); // this struct is used for uniform buffer (in vertex)
 
-        _device->updateDescriptorSets( setWrite, nullptr );
+                    camDescSetBuff.setDstSet( _frames[i].globalDescriptorSet );
+                    camDescSetBuff.setDstBinding( 0 );
+                    camDescSetBuff.setDescriptorType( vk::DescriptorType::eUniformBuffer );
+                    camDescSetBuff.setBufferInfo( camBuffInfo );
+                    setWrite.emplace_back( camDescSetBuff );
+                }
+                {
+                    sceneBuffInfo.setBuffer( _sceneParameter.allocationBuffer.buffer );
+                    sceneBuffInfo.setOffset( offset );  // the start of read the data
+                    sceneBuffInfo.setRange( sizeof( GpuSceneParameterData ) ); // this struct is used for uniform buffer (in vertex)
+
+                    sceneDescSetBuff = vk::WriteDescriptorSet {
+                        _frames[i].globalDescriptorSet,
+                        1,  // binding
+                        0,
+                        vk::DescriptorType::eUniformBufferDynamic,
+                        nullptr,
+                        sceneBuffInfo,
+                        nullptr
+                    };
+                    setWrite.push_back( sceneDescSetBuff );
+                }
+                {
+                    objectBuffInfo.setBuffer( _frames[i].objectBuffer.buffer );
+                    objectBuffInfo.setOffset( offset );
+                    objectBuffInfo.setRange( sizeof( GpuObjectData ) * maxObjectCount );
+
+                    objectDescSetBuff = vk::WriteDescriptorSet {
+                        _frames[i].objectDescriptorSet,
+                        0,
+                        0,
+                        vk::DescriptorType::eStorageBuffer,
+                        nullptr,
+                        objectBuffInfo,
+                        nullptr
+                    };
+                    setWrite.push_back( objectDescSetBuff );
+                }
+            }
+
+            // updating the descriptor set
+            _device->updateDescriptorSets( setWrite, nullptr );
+        }
     }
 }
 
 FrameData& Engine::getCurrentFrame() 
 {
     _frames[ _frameNumber % FRAME_OVERLAP ];
+}
+
+size_t Engine::padUniformBufferSize(size_t originalSize) 
+{
+    // thanks to sascha willems snippet
+    size_t minUboAlignment = _physicalDeviceProperties.limits.minUniformBufferOffsetAlignment;
+	size_t alignedSize = originalSize;
+	if (minUboAlignment > 0) {
+		alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
+	}
+	return alignedSize;
 }

@@ -34,5 +34,5 @@ struct SceneManagement
     Material* getPMaterial( const std::string& name );
     Mesh* getPMehs( const std::string& name );
 
-    void drawObject( vk::CommandBuffer cmd, FrameData currentFrame, vma::Allocator allocator );
+    void drawObject( vk::CommandBuffer cmd, FrameData currentFrame, const uint32_t descOffset );
 };

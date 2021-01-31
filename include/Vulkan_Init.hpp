@@ -38,4 +38,11 @@ vk::ImageCreateInfo initImageInfo( vk::Format format, vk::ImageUsageFlags usageF
 vk::ImageViewCreateInfo initImageViewInfo( vk::Format format, vk::Image theImage, vk::ImageAspectFlags aspectMask );
 }
 
+namespace dsc // descriptor
+{
+vk::DescriptorSetLayoutBinding initDescriptorSetLayoutBinding( uint32_t binding, vk::DescriptorType type, vk::ShaderStageFlags stagFlag );
+vk::WriteDescriptorSet initWriteDescriptorSetToBuffer( uint32_t binding, vk::DescriptorSet dstSet, vk::DescriptorType type, vk::DescriptorBufferInfo dscBuffInfo );
+} // namespace dsc
+
+
 };

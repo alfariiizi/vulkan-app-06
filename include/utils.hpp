@@ -35,11 +35,33 @@ struct MeshPushConstant         // 16 bytes + 64 bytes = 80 bytes (max size yg d
     glm::mat4 renderMatrix;    // 16 floats = 64 bytes
 };
 
+// namespace dsc   // dsc = descriptor
+// {
 struct GpuCameraData
 {
     glm::mat4 view;
     glm::mat4 projection;
     glm::mat4 viewproj;
+};
+struct GpuSceneParameterData     // despite the name is "Scene" but this struct has no relationship with SceneManagement
+{
+    glm::vec4 fogColor;     // w is for exponent
+    glm::vec4 fogDistance;  // x for min, y for max, z and w are unused
+    glm::vec4 ambientColor;
+    glm::vec4 sunlightDirection;
+    glm::vec4 sunlightColor;
+};
+// } // namespace dsc
+
+struct GpuObjectData
+{
+    glm::mat4 modelMatrix;
+};
+
+struct SceneParameter
+{
+    GpuSceneParameterData sceneParameter;
+    AllocatedBuffer allocationBuffer;
 };
 
 struct FrameData
@@ -52,12 +74,16 @@ struct FrameData
     vk::CommandBuffer mainCommandBuffer;
 
     AllocatedBuffer cameraBuffer;
-    vk::DescriptorSet globalDescriptor;
+    vk::DescriptorSet globalDescriptorSet;
+
+    AllocatedBuffer objectBuffer;
+    vk::DescriptorSet objectDescriptorSet;
 };
 
 /*
  * MeshPushConstant
  * GpuCameraData
+ * GpuSceneData
  * 
  * are must have the same byte size as on the shader file side
  */
