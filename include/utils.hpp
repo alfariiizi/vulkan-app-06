@@ -80,10 +80,17 @@ struct FrameData
     vk::DescriptorSet objectDescriptorSet;
 };
 
+struct UploadContext
+{
+    vk::Fence uploadFence;
+    vk::CommandPool commandPool;
+};
+
 /*
  * MeshPushConstant
  * GpuCameraData
  * GpuSceneData
+ * GpuObjectData
  * 
  * are must have the same byte size as on the shader file side
  */

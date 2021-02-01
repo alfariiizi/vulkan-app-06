@@ -53,11 +53,11 @@ void Engine::initVulkan()
     createMainVulkanComponent();
     createMemoryAllocator();
     createSwapchainComponent();
+    createCommandComponent();
+    createSyncObject();
     createRenderPass();
     createFramebuffers();
     createObjectToRender();
-    createCommandComponent();
-    createSyncObject();
 }
 
 void Engine::mainLoop() 
@@ -208,6 +208,18 @@ void Engine::createCommandComponent()
             }
         );
     }
+
+    /**
+     * @brief CommandPool that used for uploading context ( stagging buffer )
+     * I assume that the index present queue are the same as index graphics queue.
+     * Actually we just wanna use present queue.
+     */
+    _uploadContext.commandPool = init::cm::createCommandPool( _physicalDevice, _surface, _device.get() );
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), cp = _uploadContext.commandPool](){
+            d.destroyCommandPool( cp );
+        }
+    );
 }
 
 void Engine::createRenderPass() 
@@ -351,6 +363,16 @@ void Engine::createSyncObject()
             );
         } ENGINE_CATCH
     }
+
+    /**
+     * @brief Fence that used for uploading context ( stagging buffer )
+     */
+    _uploadContext.uploadFence = _device->createFence( {} );
+    _mainDeletionQueue.pushFunction(
+        [d = _device.get(), f = _uploadContext.uploadFence]() {
+            d.destroyFence( f );
+        }
+    );
 }
 
 void Engine::createMemoryAllocator() 
@@ -655,26 +677,71 @@ void Engine::endFrame()
 void Engine::uploadMesh(Mesh& mesh) 
 {
     size_t size = mesh.vertices.size() * sizeof(Vertex);
+    vma::AllocationCreateInfo allocInfo {}; // informasi untuk membuat buffer
 
-    vk::BufferCreateInfo bufferInfo {};
-    bufferInfo.setSize( size );
-    bufferInfo.setUsage( vk::BufferUsageFlagBits::eVertexBuffer );
+    /**
+     * @brief Creating Stagging Buffer
+     * Just use for Transfer Source
+     * And just for CPU only visible
+     */
+    AllocatedBuffer staggingBuffer;
+    {
+        vk::BufferCreateInfo staggingBufferInfo {};
+        staggingBufferInfo.setSize( size );
+        staggingBufferInfo.setUsage( vk::BufferUsageFlagBits::eTransferSrc ); // Transfer Source
 
-    vma::AllocationCreateInfo allocInfo {};
-    allocInfo.setUsage( vma::MemoryUsage::eCpuToGpu );
+        allocInfo.setUsage( vma::MemoryUsage::eCpuOnly );   // CPU only visible
 
-    auto buffer = _allocator.createBuffer( bufferInfo, allocInfo );
-    mesh.vertexBuffer.buffer = buffer.first;
-    mesh.vertexBuffer.allocation = buffer.second;
-    _mainDeletionQueue.pushFunction(
-        [a = _allocator, m = mesh](){
-            a.destroyBuffer( m.vertexBuffer.buffer, m.vertexBuffer.allocation );
-        }
-    );
+        auto stagBuff = _allocator.createBuffer( staggingBufferInfo, allocInfo );
+        staggingBuffer.buffer = stagBuff.first;
+        staggingBuffer.allocation = stagBuff.second;
+    }
 
-    void* data = _allocator.mapMemory( mesh.vertexBuffer.allocation );
-    memcpy( data, mesh.vertices.data(), size );
-    _allocator.unmapMemory( mesh.vertexBuffer.allocation );
+    /**
+     * @brief Mapping buffer
+     */
+    {
+        void* data = _allocator.mapMemory( staggingBuffer.allocation );
+        memcpy( data, mesh.vertices.data(), size );
+        _allocator.unmapMemory( staggingBuffer.allocation );
+    }
+
+    /**
+     * @brief Creating Vertex Buffer that just device visible (GPU visible)
+     * Use for Vertex Buffer pipeline (of course) and use as the Transfer Destination (the source transfer is stagging buffer)
+     * This buffer is GPU only visible
+     */
+    {
+        vk::BufferCreateInfo vertexBufferInfo {};
+        vertexBufferInfo.setSize( size );
+        // Vertex Buffer (that 'll be rendered) and Transfer Destination
+        vertexBufferInfo.setUsage( vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst );
+
+        allocInfo.setUsage( vma::MemoryUsage::eGpuOnly ); // GPU only visible
+
+        auto vertBuff = _allocator.createBuffer( vertexBufferInfo, allocInfo );
+        mesh.vertexBuffer.buffer = vertBuff.first;
+        mesh.vertexBuffer.allocation = vertBuff.second;
+        _mainDeletionQueue.pushFunction(
+            [a = _allocator, m = mesh](){
+                a.destroyBuffer( m.vertexBuffer.buffer, m.vertexBuffer.allocation );
+            }
+        );
+        
+        // Copying content of the stagging buffer (CPU only) to vertex buffer (GPU only)
+        immediateSubmit(
+            [sb = staggingBuffer, vb = mesh.vertexBuffer, s = size]( vk::CommandBuffer cmd ) {
+                vk::BufferCopy copy {};
+                copy.setSize( s );
+                copy.setSrcOffset( 0 );
+                copy.setDstOffset( 0 );
+                cmd.copyBuffer( sb.buffer, vb.buffer, copy );
+            }
+        );
+    }
+
+    // immedietly destroy the stagging buffer
+    _allocator.destroyBuffer( staggingBuffer.buffer, staggingBuffer.allocation );
 }
 
 void Engine::createObjectToRender() 
@@ -1146,4 +1213,51 @@ size_t Engine::padUniformBufferSize(size_t originalSize)
 		alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
 	}
 	return alignedSize;
+}
+
+void Engine::immediateSubmit(std::function<void( vk::CommandBuffer )>&& func) 
+{
+    vk::CommandBuffer cmdBuffer;
+    {
+        vk::CommandBufferAllocateInfo cmdAllocInfo {};
+        cmdAllocInfo.setCommandBufferCount( 1 );
+        cmdAllocInfo.setCommandPool( _uploadContext.commandPool );
+        cmdAllocInfo.setLevel( vk::CommandBufferLevel::ePrimary );
+
+        try
+        {
+            cmdBuffer = _device->allocateCommandBuffers( cmdAllocInfo ).front(); // 'front()' because just one cmdbuffer
+        } ENGINE_CATCH
+    }
+
+    vk::CommandBufferBeginInfo beginInfo {};
+    beginInfo.setFlags( vk::CommandBufferUsageFlagBits::eOneTimeSubmit );
+
+    try
+    {
+        cmdBuffer.begin( beginInfo );
+
+        // start executing
+        func( cmdBuffer );
+
+        cmdBuffer.end();
+    } ENGINE_CATCH
+
+    // Actually there are a lot of information of this submit info that could be filled,
+    // but we just need to fill cmdBuffer, the rest are just leave to default initialization.
+    vk::SubmitInfo submitInfo {};
+    submitInfo.setCommandBuffers( cmdBuffer );
+
+    /**
+     * @brief submit command buffer to the queue and then submit it
+     * uploadFence will do blocking until the graphics command finish the execution
+     */
+    _graphicsQueue.submit( submitInfo, _uploadContext.uploadFence );
+    _device->waitForFences( _uploadContext.uploadFence, VK_TRUE, UINT64_MAX );
+    _device->resetFences( _uploadContext.uploadFence );
+
+    /**
+     * @brief Clearing/Freeing command pool, this will also dealocate the command buffer(s) too.
+     */
+    _device->resetCommandPool( _uploadContext.commandPool );
 }

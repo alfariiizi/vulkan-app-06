@@ -71,6 +71,9 @@ private:
     size_t padUniformBufferSize( size_t originalSize );
 
 private:
+    void immediateSubmit( std::function<void( vk::CommandBuffer )>&& func );
+
+private:
     vk::DescriptorSetLayout _globalSetLayout;
     vk::DescriptorSetLayout _objectSetLayout;
     vk::DescriptorPool _descriptorPool;
@@ -78,6 +81,9 @@ private:
 
 private:
     SceneManagement _sceneManag;
+
+private:
+    UploadContext _uploadContext;
 
 private:
     std::array<FrameData, FRAME_OVERLAP> _frames;
