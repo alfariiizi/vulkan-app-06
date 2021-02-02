@@ -4,6 +4,9 @@
 #include "vk_mem_alloc.h"
 #include "vk_mem_alloc.hpp"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include "Vulkan_Init.hpp"
 #include "GraphicsPipeline.hpp"
 
@@ -16,6 +19,10 @@
     catch( const vk::SystemError& err )         \
     {                                           \
         throw std::runtime_error( err.what() ); \
+    }                                           \
+    catch(const std::exception& e)              \
+    {                                           \
+        throw std::runtime_error(e.what());     \
     }
 #endif
 
@@ -749,6 +756,7 @@ void Engine::createObjectToRender()
     createMeshes();
     initDescriptors();  // the descriptor set layout member variable is used when creating material
     createMaterials();
+    loadImages();
     initRenderObject();
 }
 
@@ -800,6 +808,22 @@ void Engine::createMeshes()
 {
     createTriangleMesh();
     createMonkeyMesh();
+}
+
+void Engine::loadImages() 
+{
+    Texture lostEmpire;
+
+    lostEmpire.image = loadImageFromFile( "../resources/" );
+
+    auto imageViewInfo = init::image::initImageViewInfo( vk::Format::eR8G8B8Srgb, lostEmpire.image.image, vk::ImageAspectFlagBits::eColor );
+
+    try
+    {
+        lostEmpire.imageView = _device->createImageView( imageViewInfo );
+    } ENGINE_CATCH
+
+    _sceneManag.createTexture( lostEmpire, "lostEmpire" );
 }
 
 void Engine::createTriangleMesh() 
@@ -1260,4 +1284,123 @@ void Engine::immediateSubmit(std::function<void( vk::CommandBuffer )>&& func)
      * @brief Clearing/Freeing command pool, this will also dealocate the command buffer(s) too.
      */
     _device->resetCommandPool( _uploadContext.commandPool );
+}
+
+AllocatedImage Engine::loadImageFromFile(const char* filename) 
+{
+    int texWidth, texHeight, texChannels;
+
+    // STBI_rbg_alpha are exactly equal to eR8G8B8A8Srgb in vulkan
+    auto desiredChannel = STBI_rgb_alpha;
+    vk::Format imageFormat = vk::Format::eR8G8B8A8Srgb;
+
+    stbi_uc* pixels = stbi_load( filename, &texWidth, &texHeight, &texChannels, desiredChannel );
+
+    if( !pixels )
+        throw std::runtime_error( "Failed to load image from file" );
+
+    vk::DeviceSize imageSize = texWidth * texHeight * 4;    // 4 is the sizeof(float)
+
+    AllocatedBuffer staggingBuffer = AllocatedBuffer::createBuffer(
+        imageSize, vk::BufferUsageFlagBits::eTransferSrc, _allocator, vma::MemoryUsage::eCpuOnly
+    );
+    {
+        void* pPixels = pixels;
+        void* data = _allocator.mapMemory( staggingBuffer.allocation );
+        memcpy( data, pPixels, static_cast<size_t>( imageSize ) );
+    }
+    // after copying the content (in this case, the content is image pixels) to the allocated memory, we no longer use this pixels
+    stbi_image_free( pixels ); 
+
+    vk::Extent3D imageExtent;
+    imageExtent.setHeight( texHeight );
+    imageExtent.setWidth( texWidth );
+    imageExtent.setDepth( 1 );
+
+    vk::ImageCreateInfo imageInfo = init::image::initImageInfo(
+        imageFormat,
+        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        imageExtent
+    );
+
+    vma::AllocationCreateInfo imageAlloc {};
+    imageAlloc.setUsage( vma::MemoryUsage::eGpuOnly );
+
+    AllocatedImage image;
+    {
+        auto tmp = _allocator.createImage( imageInfo, imageAlloc );
+        image.image = tmp.first;
+        image.allocation = tmp.second;
+    }
+
+    immediateSubmit(
+        [srcBuff = staggingBuffer.buffer, img = image.image, extent = imageExtent]( vk::CommandBuffer cmdBuffer ){
+            vk::ImageSubresourceRange imageSubresource {};
+            imageSubresource.setAspectMask( vk::ImageAspectFlagBits::eColor );
+            imageSubresource.setLayerCount( 1 );
+            imageSubresource.setBaseArrayLayer( 0 );
+            imageSubresource.setLevelCount( 1 );
+            imageSubresource.setBaseMipLevel( 0 );
+
+            vk::ImageMemoryBarrier imageBarrier2Transfer {};
+            imageBarrier2Transfer.setSubresourceRange( imageSubresource );
+            imageBarrier2Transfer.setOldLayout( vk::ImageLayout::eUndefined );
+            imageBarrier2Transfer.setNewLayout( vk::ImageLayout::eTransferDstOptimal );
+            imageBarrier2Transfer.setImage( img );
+            imageBarrier2Transfer.setSrcAccessMask( vk::AccessFlags{ 0 } );
+            imageBarrier2Transfer.setDstAccessMask( vk::AccessFlagBits::eTransferWrite );
+
+            cmdBuffer.pipelineBarrier( 
+                vk::PipelineStageFlagBits::eTopOfPipe,
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::DependencyFlags{ 0 },
+                nullptr,
+                nullptr,
+                imageBarrier2Transfer
+            );
+
+            vk::ImageSubresourceLayers subresource {};
+            subresource.setAspectMask( vk::ImageAspectFlagBits::eColor );
+            subresource.setMipLevel( 0 );
+            subresource.setBaseArrayLayer( 0 );
+            subresource.setLayerCount( 1 );
+
+            vk::BufferImageCopy buffer2ImageCopy {};
+            // the buffer
+            buffer2ImageCopy.setBufferOffset( vk::DeviceSize{ 0 } );
+            buffer2ImageCopy.setBufferImageHeight( 0 );
+            buffer2ImageCopy.setBufferRowLength( 0 );
+            // the image
+            buffer2ImageCopy.setImageOffset( vk::DeviceSize{ 0 } );
+            buffer2ImageCopy.setImageExtent( extent );
+            buffer2ImageCopy.setImageSubresource( subresource );
+
+            cmdBuffer.copyBufferToImage( srcBuff, img, vk::ImageLayout::eTransferDstOptimal, buffer2ImageCopy );
+
+            vk::ImageMemoryBarrier imageBarrier2Read = imageBarrier2Transfer;
+            imageBarrier2Read.setOldLayout( vk::ImageLayout::eTransferDstOptimal );
+            imageBarrier2Read.setNewLayout( vk::ImageLayout::eShaderReadOnlyOptimal );
+            imageBarrier2Read.setSrcAccessMask( vk::AccessFlagBits::eTransferWrite );
+            imageBarrier2Read.setDstAccessMask( vk::AccessFlagBits::eShaderRead );
+
+            cmdBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eFragmentShader,
+                vk::DependencyFlags{ 0 },
+                nullptr,
+                nullptr,
+                imageBarrier2Read
+            );
+        }
+    );
+
+    _mainDeletionQueue.pushFunction(
+        [a = _allocator, img = image](){
+            a.destroyImage( img.image, img.allocation );
+        }
+    );
+
+    _allocator.destroyBuffer( staggingBuffer.buffer, staggingBuffer.allocation );
+
+    return image;
 }

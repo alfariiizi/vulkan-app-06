@@ -18,11 +18,18 @@ struct RenderObject
     glm::mat4 transformMatrix;
 };
 
+struct Texture
+{
+    AllocatedImage image;
+    vk::ImageView imageView;
+};
+
 struct SceneManagement
 {
     std::vector<RenderObject> renderable;
     std::unordered_map<std::string, Material> materials;
     std::unordered_map<std::string, Mesh> meshes;
+    std::unordered_map<std::string, Texture> textures;
 
     void pushRenderableObject( RenderObject renderObject );
 
@@ -30,6 +37,8 @@ struct SceneManagement
     void createMaterial( Material material, const std::string& name );
 
     void createMesh( Mesh mesh, const std::string& name );
+
+    void createTexture( Texture texture, const std::string& name );
 
     Material* getPMaterial( const std::string& name );
     Mesh* getPMehs( const std::string& name );

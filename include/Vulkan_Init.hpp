@@ -44,5 +44,6 @@ vk::DescriptorSetLayoutBinding initDescriptorSetLayoutBinding( uint32_t binding,
 vk::WriteDescriptorSet initWriteDescriptorSetToBuffer( uint32_t binding, vk::DescriptorSet dstSet, vk::DescriptorType type, vk::DescriptorBufferInfo dscBuffInfo );
 } // namespace dsc
 
+bool loadImageFromFile( class Engine& engine, const std::string& filename, struct AllocatedImage& outImage );
 
 };

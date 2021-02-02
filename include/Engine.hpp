@@ -53,6 +53,7 @@ private:
     void createObjectToRender();
     void createMaterials();
     void createMeshes();
+    void loadImages();
     void initRenderObject();
 
 private:
@@ -72,6 +73,7 @@ private:
 
 private:
     void immediateSubmit( std::function<void( vk::CommandBuffer )>&& func );
+    AllocatedImage loadImageFromFile( const char* filename );
 
 private:
     vk::DescriptorSetLayout _globalSetLayout;

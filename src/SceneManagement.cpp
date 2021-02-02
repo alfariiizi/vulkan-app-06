@@ -20,6 +20,11 @@ void SceneManagement::createMesh( Mesh mesh, const std::string& name )
     meshes[name] = mesh;
 }
 
+void SceneManagement::createTexture(Texture texture, const std::string& name) 
+{
+    textures[name] = texture;
+}
+
 Material* SceneManagement::getPMaterial( const std::string& name )
 {
     auto it = materials.find( name );

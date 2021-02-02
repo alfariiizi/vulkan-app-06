@@ -1,5 +1,10 @@
 #include "Vulkan_Init.hpp"
 
+#include "stb_image.h"
+
+#include "Engine.hpp"
+#include "utils.hpp"
+
 #ifndef ENGINE_CATCH
 #define ENGINE_CATCH                            \
     catch( const vk::SystemError& err )         \
@@ -328,4 +333,25 @@ vk::WriteDescriptorSet init::dsc::initWriteDescriptorSetToBuffer( uint32_t bindi
     setWrite.setDescriptorType( type );
 
     return setWrite;
+}
+
+bool init::loadImageFromFile( Engine& engine, const std::string& filename, AllocatedImage& outImage )
+{
+    int texWidth, texHeight, texChannels;
+
+    // STBI_rbg_alpha are exactly equal to eR8G8B8A8Srgb in vulkan
+    auto desiredChannel = STBI_rgb_alpha;
+    vk::Format imageFormat = vk::Format::eR8G8B8A8Srgb;
+
+    stbi_uc* pixels = stbi_load( filename.c_str(), &texWidth, &texHeight, &texChannels, desiredChannel );
+
+    if( !pixels )
+        return false;
+
+    void* pPixel = pixels;
+    vk::DeviceSize imageSize = texWidth * texHeight * 4;    // 4 is the sizeof(float)
+
+    AllocatedBuffer staggingBuffer = AllocatedBuffer::createBuffer( imageSize, vk::BufferUsageFlagBits::eTransferSrc, engine);
+
+    return true;
 }
