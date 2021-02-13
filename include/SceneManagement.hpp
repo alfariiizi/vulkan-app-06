@@ -7,21 +7,23 @@
 
 struct Material
 {
+    vk::DescriptorSet textureSet = nullptr; // descriptor set for texturing
     vk::PipelineLayout layout;
     vk::Pipeline pipeline;
-};
-
-struct RenderObject
-{
-    Mesh* pMesh;
-    Material* pMaterial;
-    glm::mat4 transformMatrix;
 };
 
 struct Texture
 {
     AllocatedImage image;
     vk::ImageView imageView;
+};
+
+struct RenderObject
+{
+    Mesh* pMesh;
+    Material* pMaterial;
+    Texture* pTexture;
+    glm::mat4 transformMatrix;
 };
 
 struct SceneManagement
@@ -33,8 +35,8 @@ struct SceneManagement
 
     void pushRenderableObject( RenderObject renderObject );
 
-    void createMaterial( vk::Pipeline pipeline, vk::PipelineLayout layout, const std::string& name );
-    void createMaterial( Material material, const std::string& name );
+    void createMaterial( vk::Pipeline pipeline, vk::PipelineLayout layout, const std::string& name, vk::DescriptorSet dscSet = nullptr );
+    // void createMaterial( Material material, const std::string& name );
 
     void createMesh( Mesh mesh, const std::string& name );
 
@@ -42,6 +44,7 @@ struct SceneManagement
 
     Material* getPMaterial( const std::string& name );
     Mesh* getPMehs( const std::string& name );
+    Texture* getPTexture( const std::string& name );
 
     void drawObject( vk::CommandBuffer cmd, FrameData currentFrame, const uint32_t descOffset );
 };

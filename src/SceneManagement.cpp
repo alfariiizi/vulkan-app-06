@@ -5,15 +5,15 @@ void SceneManagement::pushRenderableObject( RenderObject renderObject )
     renderable.emplace_back( renderObject );
 }
 
-void SceneManagement::createMaterial( vk::Pipeline pipeline, vk::PipelineLayout layout, const std::string& name )
+void SceneManagement::createMaterial( vk::Pipeline pipeline, vk::PipelineLayout layout, const std::string& name, vk::DescriptorSet dscSet )
 {
-    materials[name] = { layout, pipeline };
+    materials[name] = { dscSet, layout, pipeline };
 }
 
-void SceneManagement::createMaterial( Material material, const std::string& name )
-{
-    materials[name] = material;
-}
+// void SceneManagement::createMaterial( Material material, const std::string& name )
+// {
+//     materials[name] = material;
+// }
 
 void SceneManagement::createMesh( Mesh mesh, const std::string& name )
 {
@@ -38,6 +38,15 @@ Mesh* SceneManagement::getPMehs( const std::string& name )
 {
     auto it = meshes.find( name );
     if( it == meshes.end() )
+        return nullptr;
+    
+    return &it->second;
+}
+
+Texture* SceneManagement::getPTexture(const std::string& name) 
+{
+    auto it = textures.find( name );
+    if( it == textures.end() )
         return nullptr;
     
     return &it->second;

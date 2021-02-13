@@ -497,6 +497,7 @@ void Engine::draw( vk::CommandBuffer cmd )
     {
         Mesh* lastMesh = nullptr;
         Material* pLastMaterial = nullptr;
+        vk::DescriptorSet* unvalidDescriptorSet = nullptr;
 
         uint32_t i = 0U;
         for( auto& object : _sceneManag.renderable )
@@ -507,6 +508,9 @@ void Engine::draw( vk::CommandBuffer cmd )
             if( object.pMaterial != pLastMaterial ) // just bind if the materials is valid
             {
                 cmd.bindPipeline( vk::PipelineBindPoint::eGraphics, object.pMaterial->pipeline );
+
+                // if( object.pMaterial->textureSet != unvalidDescriptorSet )
+                cmd.bindDescriptorSets( vk::PipelineBindPoint::eGraphics, object.pMaterial->layout, 2, object.pMaterial->textureSet, nullptr );
 
                 // this bind descriptor set is just for dynamic buffer. Normal buffer no need this bind.
                 // It's makes sense, because the normal buffer just has static offset.
@@ -763,44 +767,92 @@ void Engine::createObjectToRender()
 void Engine::createMaterials() 
 {
     // defaultMaterial();
-    colorMaterial();
+    // colorMaterial();
+    texturedMaterial();
 }
 
 void Engine::initRenderObject() 
 {
-    /**
-     * @brief Monkey object
-     */
-    {
-        RenderObject monkey;
-        monkey.pMesh = _sceneManag.getPMehs( "monkey" );
-        assert( monkey.pMesh != nullptr );
-        monkey.pMaterial = _sceneManag.getPMaterial( "colorMaterial" );
-        assert( monkey.pMaterial != nullptr );
-        monkey.transformMatrix = glm::mat4( 1.0f );
-        _sceneManag.pushRenderableObject( monkey );
-    }
+    // /**
+    //  * @brief Monkey object
+    //  */
+    // {
+    //     RenderObject monkey;
+    //     monkey.pMesh = _sceneManag.getPMehs( "monkey" );
+    //     assert( monkey.pMesh != nullptr );
+    //     monkey.pMaterial = _sceneManag.getPMaterial( "colorMaterial" );
+    //     assert( monkey.pMaterial != nullptr );
+    //     monkey.transformMatrix = glm::mat4( 1.0f );
+    //     _sceneManag.pushRenderableObject( monkey );
+    // }
+
+    // /**
+    //  * @brief Triangles object
+    //  * (-20 until <= 20, is 21 step. 21 for x step and for y step, so maybe 21 * 21 = 441 triangle objects)
+    //  */
+    // for( int x = -20; x <= 20; ++x )
+    // {
+    //     for( int y = -20; y <= 20; ++y )
+    //     {
+    //         RenderObject triangle;
+    //         triangle.pMesh = _sceneManag.getPMehs( "triangle" );
+    //         assert( triangle.pMesh != nullptr );
+    //         triangle.pMaterial = _sceneManag.getPMaterial( "colorMaterial" );
+    //         assert( triangle.pMaterial != nullptr );
+
+    //         glm::mat4 translation = glm::translate( glm::mat4{ 1.0f }, glm::vec3{ x, 0, y } );
+    //         glm::mat4 scale = glm::scale( glm::mat4{ 1.0f }, glm::vec3{ 0.2f, 0.2f, 0.2f } );
+    //         triangle.transformMatrix = translation * scale;
+
+    //         _sceneManag.pushRenderableObject( triangle );
+    //     }
+    // }
 
     /**
-     * @brief Triangles object
-     * (-20 until <= 20, is 21 step. 21 for x step and for y step, so maybe 21 * 21 = 441 triangle objects)
+     * @brief Empire map
      */
-    for( int x = -20; x <= 20; ++x )
     {
-        for( int y = -20; y <= 20; ++y )
+        RenderObject map;
+        map.pMaterial = _sceneManag.getPMaterial("texturedMaterial");
+        map.pMesh = _sceneManag.getPMehs( "empireMesh" );
+        map.pTexture = _sceneManag.getPTexture( "empireMapTexture" );
+        map.transformMatrix = glm::translate( glm::vec3{ 5, -10, 0 } );
+
+        auto samplerCreateInfo = vk::SamplerCreateInfo {};
+        vk::Sampler blockySampler;
+        try
         {
-            RenderObject triangle;
-            triangle.pMesh = _sceneManag.getPMehs( "triangle" );
-            assert( triangle.pMesh != nullptr );
-            triangle.pMaterial = _sceneManag.getPMaterial( "colorMaterial" );
-            assert( triangle.pMaterial != nullptr );
+            blockySampler = _device->createSampler( samplerCreateInfo );
+        } ENGINE_CATCH
 
-            glm::mat4 translation = glm::translate( glm::mat4{ 1.0f }, glm::vec3{ x, 0, y } );
-            glm::mat4 scale = glm::scale( glm::mat4{ 1.0f }, glm::vec3{ 0.2f, 0.2f, 0.2f } );
-            triangle.transformMatrix = translation * scale;
+        vk::DescriptorSetAllocateInfo setAllocInfo {};
+        setAllocInfo.setDescriptorPool( _descriptorPool );
+        setAllocInfo.setSetLayouts( _singleTextureSetLayout );
+        setAllocInfo.setDescriptorSetCount( 1 );
 
-            _sceneManag.pushRenderableObject( triangle );
-        }
+        try
+        {
+            map.pMaterial->textureSet = _device->allocateDescriptorSets( setAllocInfo ).front();
+        } ENGINE_CATCH
+
+        vk::DescriptorImageInfo imageInfo {};
+        imageInfo.setImageLayout( vk::ImageLayout::eShaderReadOnlyOptimal );
+        imageInfo.setImageView( _sceneManag.getPTexture("empireMapTexture")->imageView );
+        imageInfo.setSampler( blockySampler );
+
+        auto setWrite = vk::WriteDescriptorSet {
+            map.pMaterial->textureSet,
+            0,
+            0,
+            vk::DescriptorType::eCombinedImageSampler,
+            imageInfo,
+            nullptr,
+            nullptr
+        };
+
+        _device->updateDescriptorSets( setWrite, nullptr );
+
+        _sceneManag.pushRenderableObject( map );
     }
 }
 
@@ -808,22 +860,40 @@ void Engine::createMeshes()
 {
     createTriangleMesh();
     createMonkeyMesh();
+
+    /**
+     * @brief Empure Mesh
+     */
+    {
+        Mesh empireMesh;
+        empireMesh.loadFromObj( "resources/lost_empire.obj" );
+        uploadMesh( empireMesh );
+
+        _sceneManag.createMesh( empireMesh, "empireMesh" );
+    }
 }
 
 void Engine::loadImages() 
 {
     Texture lostEmpire;
 
-    lostEmpire.image = loadImageFromFile( "../resources/" );
+    lostEmpire.image = loadImageFromFile( "resources/lost_empire-RGBA.png" );
 
-    auto imageViewInfo = init::image::initImageViewInfo( vk::Format::eR8G8B8Srgb, lostEmpire.image.image, vk::ImageAspectFlagBits::eColor );
+    auto imageViewInfo = init::image::initImageViewInfo( vk::Format::eR8G8B8A8Srgb, lostEmpire.image.image, vk::ImageAspectFlagBits::eColor );
 
     try
     {
         lostEmpire.imageView = _device->createImageView( imageViewInfo );
     } ENGINE_CATCH
 
-    _sceneManag.createTexture( lostEmpire, "lostEmpire" );
+    _mainDeletionQueue.pushFunction(
+        [ d = _device.get(), a = _allocator, i = lostEmpire.image, iv = lostEmpire.imageView ](){
+            d.destroyImageView( iv );
+            a.destroyImage( i.image, i.allocation );
+        }
+    );
+
+    _sceneManag.createTexture( lostEmpire, "empireMapTexture" );
 }
 
 void Engine::createTriangleMesh() 
@@ -972,6 +1042,56 @@ void Engine::colorMaterial()
     _sceneManag.createMaterial( pipeline, layout, "colorMaterial" );
 }
 
+void Engine::texturedMaterial() 
+{
+    vk::PipelineLayout layout;
+    vk::Pipeline pipeline;
+
+    {
+        vk::PushConstantRange pushConstant {};
+        pushConstant.setOffset( 0 );
+        pushConstant.setSize( sizeof( MeshPushConstant ) );
+        pushConstant.setStageFlags( vk::ShaderStageFlagBits::eVertex );
+
+        std::vector<vk::DescriptorSetLayout> setLayout = { _globalSetLayout, _objectSetLayout, _singleTextureSetLayout };
+
+        vk::PipelineLayoutCreateInfo layoutInfo {};
+        layoutInfo.setSetLayouts( setLayout );
+        layoutInfo.setPushConstantRanges( pushConstant );
+
+        try
+        {
+            layout = _device->createPipelineLayout( layoutInfo );
+        } ENGINE_CATCH
+        _mainDeletionQueue.pushFunction(
+            [d = _device.get(), l = layout](){
+                d.destroyPipelineLayout( l );
+            }
+        );
+    }
+
+    auto depthStencilState = GraphicsPipeline::createDepthStencilInfo( true, true, vk::CompareOp::eLessOrEqual );
+    auto vertexInputState = Vertex::getVertexInputDescription();
+
+    GraphicsPipeline builder;
+
+    builder.init( _device.get(), "shaders/vertex_shader.spv", "shaders/textured.spv", _swapchainExtent );
+
+    // depth stencil
+    builder.m_useDepthStencil = true;
+    builder.m_depthStencilStateInfo = depthStencilState;
+    // vertex input
+    builder.m_vertexInputStateInfo.setVertexAttributeDescriptions( vertexInputState.attributs );
+    builder.m_vertexInputStateInfo.setVertexBindingDescriptions( vertexInputState.bindings );
+
+    // create the pipeline
+    builder.createGraphicsPipeline( _renderPass, layout, _mainDeletionQueue );
+
+    pipeline = builder.getGraphicsPipeline();
+
+    _sceneManag.createMaterial( pipeline, layout, "texturedMaterial" );
+}
+
 void Engine::initDescriptors() 
 {
     /**
@@ -998,6 +1118,12 @@ void Engine::initDescriptors()
         storageBuffer.setType( vk::DescriptorType::eStorageBuffer );
         storageBuffer.setDescriptorCount( 10 );
         sizes.emplace_back( storageBuffer );
+
+        // the pool will be hold 10 combined image sampler
+        vk::DescriptorPoolSize textureBuffer {};
+        textureBuffer.setType( vk::DescriptorType::eCombinedImageSampler );
+        textureBuffer.setDescriptorCount( 10 );
+        sizes.emplace_back( textureBuffer );
 
         vk::DescriptorPoolCreateInfo descriptorPoolInfo {};
         descriptorPoolInfo.setMaxSets( maxSets ); // the maximum descriptor sets that can be store to the pool
@@ -1056,6 +1182,24 @@ void Engine::initDescriptors()
             } ENGINE_CATCH
             _mainDeletionQueue.pushFunction(
                 [d = _device.get(), sl = _objectSetLayout](){
+                    d.destroyDescriptorSetLayout( sl );
+                }
+            );
+        }
+        {
+            auto textureBinding = init::dsc::initDescriptorSetLayoutBinding(
+                0,
+                vk::DescriptorType::eCombinedImageSampler,
+                vk::ShaderStageFlagBits::eFragment
+            );
+            vk::DescriptorSetLayoutCreateInfo setLayoutInfo {};
+            setLayoutInfo.setBindings( textureBinding );
+            try
+            {
+                _singleTextureSetLayout = _device->createDescriptorSetLayout( setLayoutInfo );
+            } ENGINE_CATCH
+            _mainDeletionQueue.pushFunction(
+                [d = _device.get(), sl = _singleTextureSetLayout](){
                     d.destroyDescriptorSetLayout( sl );
                 }
             );

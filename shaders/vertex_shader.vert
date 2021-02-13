@@ -5,9 +5,11 @@
 layout( location = 0 ) in vec3 v3Position;
 layout( location = 1 ) in vec3 v3Normal;
 layout( location = 2 ) in vec3 v3Color;
+layout( location = 3 ) in vec2 v2TexCoord;
 
 // this is for the color that passed to fragment shader
 layout( location = 0 ) out vec3 fragColor;
+layout( location = 1 ) out vec2 texCoord;
 
 // this struct is for buffer that bound in Descriptor set
 layout( set = 0, binding = 0 ) uniform GpuCameraData
@@ -45,4 +47,5 @@ void main()
     mat4 transformMatrix = cameraData.viewproj * modelMatrix;
     gl_Position = transformMatrix * vec4( v3Position, 1.0 );
     fragColor = vec3( v3Color );
+    texCoord = v2TexCoord;
 }

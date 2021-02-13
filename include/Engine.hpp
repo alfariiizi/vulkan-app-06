@@ -63,6 +63,7 @@ private:
 private:
     void defaultMaterial();
     void colorMaterial();
+    void texturedMaterial();
 
 private:
     void initDescriptors();
@@ -78,6 +79,7 @@ private:
 private:
     vk::DescriptorSetLayout _globalSetLayout;
     vk::DescriptorSetLayout _objectSetLayout;
+    vk::DescriptorSetLayout _singleTextureSetLayout;
     vk::DescriptorPool _descriptorPool;
     SceneParameter _sceneParameter;
 
@@ -91,8 +93,8 @@ private:
     std::array<FrameData, FRAME_OVERLAP> _frames;
 
 public:
-    static constexpr unsigned int ScreenWidth       = 800U;
-    static constexpr unsigned int ScreenHeight      = 600U;
+    static constexpr unsigned int ScreenWidth       = 1600U;
+    static constexpr unsigned int ScreenHeight      = 800U;
 
 private:
     GLFWwindow      * _window;

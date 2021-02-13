@@ -17,6 +17,7 @@ struct Vertex
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec3 color;
+    glm::vec2 uv;
 
     static VertexInputDescription getVertexInputDescription() 
     {
@@ -54,6 +55,13 @@ struct Vertex
         colorAttribute.setOffset( offsetof( Vertex, color ) );
         description.attributs.push_back( colorAttribute );
 
+        // uv will be stored at location = 3
+        vk::VertexInputAttributeDescription uvAttribute {};
+        uvAttribute.setBinding( 0 );
+        uvAttribute.setLocation( 3 );
+        uvAttribute.setFormat( vk::Format::eR32G32Sfloat );
+        uvAttribute.setOffset( offsetof( Vertex, uv ) );
+        description.attributs.push_back( uvAttribute );
 
         return description;
     }
